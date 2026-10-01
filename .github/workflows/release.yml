@@ -1,0 +1,71 @@
+# Publishes to npm when a version tag is pushed, then opens a GitHub release.
+#
+#   npm version patch        # or minor / major
+#   git push --follow-tags
+#
+# Publishing uses npm trusted publishing (OIDC), so no NPM_TOKEN secret is
+# needed: the workflow's id-token is exchanged with the registry, and npm
+# attaches a signed provenance statement saying this commit built the package.
+# Configure the trusted publisher on npmjs.com for this repository before the
+# first release.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  # Gate the release on the same checks that run for a pull request.
+  ci:
+    uses: SignalK/signalk-server/.github/workflows/plugin-ci.yml@master
+    with:
+      enable-armv7: true
+
+  publish:
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub release
+      id-token: write # npm trusted publishing and provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check the tag matches package.json
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          version="$(node -p "require('./package.json').version")"
+          if [ "v${version}" != "${tag}" ]; then
+            echo "::error::tag ${tag} does not match package.json version ${version}"
+            exit 1
+          fi
+          echo "releasing ${version}"
+
+      # `npm publish` runs prepublishOnly, which builds dist/.
+      - name: Publish to npm
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          case "${version}" in
+            *-*) npm publish --access public --tag beta --provenance ;;
+            *) npm publish --access public --provenance ;;
+          esac
+
+      - name: Open a GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF#refs/tags/}" \
+            --generate-notes \
+            --verify-tag
