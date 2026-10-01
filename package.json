@@ -1,0 +1,41 @@
+{
+  "name": "signalk-quick-chain-counter",
+  "version": "0.1.0",
+  "description": "Signal K plugin: reads Quick PCS chain counter frames directly from a SocketCAN interface",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "watch": "tsc --watch --pretty false",
+    "test": "mocha --require ts-node/register 'test/**/*.ts'",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "signalk-node-server-plugin",
+    "signalk-category-nmea-2000",
+    "signalk",
+    "quick",
+    "pcs",
+    "chain-counter",
+    "anchor",
+    "can",
+    "socketcan"
+  ],
+  "author": "Signal K",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/SignalK/signalk-quick-chain-counter",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/chai": "^4.3.0",
+    "@types/mocha": "^10.0.0",
+    "@types/node": "^20.0.0",
+    "chai": "^4.3.0",
+    "mocha": "^10.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  }
+}
