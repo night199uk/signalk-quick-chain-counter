@@ -1,20 +1,22 @@
 # signalk-quick-chain-counter
 
 A Signal K plugin that reads the **Quick PCS chain counter** straight off a
-SocketCAN interface and publishes the deployed chain length to Signal K.
+SocketCAN interface, publishes the deployed chain length, and uses it to drive
+an anchor alarm.
 
 ## What it does
 
 Quick windlasses report how much chain is out in a single CAN frame, message
-type `0x6C1`. This plugin listens for that frame and publishes:
+type `0x6C1`. This plugin listens for that frame and then:
 
-| Signal K path | Meaning |
+| | |
 |---|---|
-| `navigation.anchor.rodeDeployed` | Length of chain currently deployed, in **metres** |
+| **Publishes** | `navigation.anchor.rodeLength` — deployed chain length, in metres |
+| **Drives** | your anchor alarm: drops it when the chain goes out, raises it when the chain comes in, and grows the watch zone as more chain is let out |
 
-Quick reports the length in either metres or feet, and says which in the same
-frame. Feet are converted; the value is never relabelled, so 107 ft arrives as
-32.6136 m rather than 107 m.
+The chain length is in metres whatever the device reports: Quick says whether
+the value is in metres or feet, and feet are converted rather than relabelled,
+so 107 ft arrives as 32.6136 m and not 107 m.
 
 ## Why it exists
 
@@ -24,13 +26,16 @@ frame that is understood, and nothing else.
 
 ## Requirements
 
-- Linux, with the Quick devices on a SocketCAN interface the server can open.
-- A Signal K server, which is what supplies the SocketCAN binding (see below).
-- The interface must exist and be up, for example:
+- Linux, with the Quick devices on a SocketCAN interface the server can open:
 
   ```sh
   sudo ip link set can0 up type can bitrate 250000
   ```
+
+- A Signal K server, which supplies the SocketCAN binding (see below).
+- Optionally, [Hoekens Anchor
+  Alarm](https://github.com/hoeken/hoekens-anchor-alarm) — or another plugin
+  that accepts `navigation.anchor.position` — to do the anchor watch.
 
 ## Install
 
@@ -49,7 +54,40 @@ no network access beyond the package itself.
 | Setting | Default | Meaning |
 |---|---|---|
 | **CAN interface** | `can0` | The interface the Quick devices are on |
+| **Drive the anchor alarm** | on | Drop/raise/resize an anchor alarm from the chain counter |
+| **Watch zone radius, as a multiple of the rode** | `1.0` | The alarm radius is the chain length times this |
+| **Anchor alarm plugin id** | `hoekens-anchor-alarm` | Whose `navigation.anchor.position` handler to drive |
 | **canboatjs location** | *(auto)* | Only set this if the automatic lookup fails |
+
+## Driving the anchor alarm
+
+Anchor watch is not something this plugin reimplements. It reports how much
+chain is over the side and lets an anchor alarm own the drag alarm, the watch
+zone and the session log.
+
+It talks to the alarm through the server's action handlers, which is why there
+is no HTTP call, no port to discover, no JWT to obtain and no dependency on the
+alarm being installed:
+
+| Chain counter | What the alarm is asked to do |
+|---|---|
+| goes out (0 → positive) | drop the anchor at the boat's current position, with a circle zone of `rodeLength × radiusScope` |
+| more chain out | resize the zone to the new chain length |
+| more chain in | resize the zone back down |
+| comes all the way in | raise the anchor |
+
+**The drop is an edge, not a state.** If you raise the anchor by hand while
+chain is still out, the plugin notices the alarm refusing to resize and leaves
+it alone — it will not fight you by re-dropping. It takes over again after the
+chain has been all the way in.
+
+**The source is named deliberately.** The server records each PUT handler under
+the id of the plugin that registered it, and rejects a PUT with no source as
+ambiguous once more than one anchor alarm is installed. Hence the *Anchor alarm
+plugin id* setting.
+
+If nothing is listening on that id, the plugin says so once and stops driving an
+alarm. Publishing the chain length is unaffected.
 
 ## The one assumption worth knowing
 
@@ -79,9 +117,6 @@ the server's `node_modules`: the server installs plugins under its config
 directory, which is a sibling of its installation rather than a parent. The
 server's own main-module paths do include it, so those are searched first.
 
-If the lookup ever fails, the plugin reports it in its status and the
-**canboatjs location** setting overrides the search.
-
 ## Development
 
 ```sh
@@ -90,9 +125,9 @@ npm test          # mocha
 npm run build     # tsc -> dist/
 ```
 
-The decoder, the delta shaping and the plugin lifecycle are unit tested. The
-native read path is not: it needs a real (or virtual) CAN interface, which a
-build machine generally does not have.
+The decoder, the delta shaping, the anchor-alarm planning and the bridge are
+unit tested. The native read path is not: it needs a real (or virtual) CAN
+interface, which a build machine generally does not have.
 
 ## Licence
 

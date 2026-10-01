@@ -4,7 +4,7 @@ import {
   chainDeployedMetres,
   decodeChainCount,
   QUICK_CHAIN_COUNT_CAN_ID,
-  RODE_DEPLOYED_PATH
+  RODE_LENGTH_PATH
 } from '../src/decode'
 
 // A real chain count frame: 6C1#C1186B0000000200
@@ -99,7 +99,9 @@ describe('constants', () => {
     expect(QUICK_CHAIN_COUNT_CAN_ID).to.equal(0x6c1)
   })
 
-  it('publishes the deployed chain under the Signal K anchor path', () => {
-    expect(RODE_DEPLOYED_PATH).to.equal('navigation.anchor.rodeDeployed')
+  it('publishes the deployed chain under the anchor rode path', () => {
+    // navigation.anchor.rodeLength is what the anchor alarm plugins use; the
+    // specification's schema does not list it yet.
+    expect(RODE_LENGTH_PATH).to.equal('navigation.anchor.rodeLength')
   })
 })

@@ -38,8 +38,20 @@ export const CHAIN_COUNT_PAYLOAD_BYTES = 8
 /** International feet to metres. Signal K stores every length in metres. */
 export const FEET_TO_METRES = 0.3048
 
-/** Where the deployed chain length belongs in the Signal K data model. */
-export const RODE_DEPLOYED_PATH = 'navigation.anchor.rodeDeployed'
+/**
+ * Where the deployed chain length belongs in the Signal K data model.
+ *
+ * `rodeLength` is what the anchor alarm plugin publishes and accepts, and what
+ * freeboard's anchor watch reads; it is the established anchor-rode path even
+ * though the specification's schema does not list it yet.
+ */
+export const RODE_LENGTH_PATH = 'navigation.anchor.rodeLength'
+
+/** Where the anchor itself is, once it is down. Owned by the anchor alarm. */
+export const ANCHOR_POSITION_PATH = 'navigation.anchor.position'
+
+/** The circle zone around the anchor; the alarm's PUT handler resizes it. */
+export const ANCHOR_MAX_RADIUS_PATH = 'navigation.anchor.maxRadius'
 
 /** The two unit labels Quick defines, spelled as canboat spells them. */
 export type QuickUnits = 'Meters' | 'Feet'

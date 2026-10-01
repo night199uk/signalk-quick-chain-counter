@@ -14,14 +14,24 @@ function fakeApp() {
     status: [] as string[],
     errors: [] as string[],
     messages: [] as unknown[],
-    debug: [] as unknown[]
+    debug: [] as unknown[],
+    puts: [] as Array<{ path: string; value: unknown }>
   }
-  const app: PluginApp = {
+  let selfPosition: unknown = undefined
+  const app: PluginApp & { setPosition(v: unknown): void } = {
     debug: (...args) => calls.debug.push(args),
     error: (...args) => calls.errors.push(args.join(' ')),
     setPluginStatus: (message) => calls.status.push(message),
     setPluginError: (message) => calls.errors.push(message),
-    handleMessage: (_id, message) => calls.messages.push(message)
+    handleMessage: (_id, message) => calls.messages.push(message),
+    getSelfPath: () => selfPosition,
+    putPath: async (path, value) => {
+      calls.puts.push({ path, value })
+      return { statusCode: 200 }
+    },
+    setPosition: (v) => {
+      selfPosition = v
+    }
   }
   return { app, calls }
 }
@@ -87,12 +97,12 @@ describe('frameToDelta', () => {
 
     expect(delta).to.not.equal(undefined)
     expect(delta!.updates[0].values[0].path).to.equal(
-      'navigation.anchor.rodeDeployed'
+      'navigation.anchor.rodeLength'
     )
     // 107 feet, so 32.6136 m - not 107 m, which is the bug this guards.
     expect(delta!.updates[0].values[0].value).to.be.closeTo(32.6136, 1e-4)
-    expect(delta!.updates[0].source.pgn).to.equal(0x6c1)
-    expect(delta!.updates[0].source.src).to.equal(String(0x18c1))
+    expect(delta!.updates[0].source!.pgn).to.equal(0x6c1)
+    expect(delta!.updates[0].source!.src).to.equal(String(0x18c1))
     expect(delta!.updates[0].timestamp).to.equal('2026-01-01T00:00:00.000Z')
   })
 

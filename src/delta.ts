@@ -18,7 +18,7 @@ import {
   ChainCount,
   chainDeployedMetres,
   QUICK_CHAIN_COUNT_CAN_ID,
-  RODE_DEPLOYED_PATH
+  RODE_LENGTH_PATH
 } from './decode'
 
 export interface SignalKSource {
@@ -28,44 +28,84 @@ export interface SignalKSource {
   src: string
 }
 
+export interface SignalKUpdate {
+  source?: SignalKSource
+  timestamp: string
+  values: Array<{ path: string; value: unknown }>
+}
+
 export interface SignalKDelta {
-  updates: Array<{
-    source: SignalKSource
-    timestamp: string
-    values: Array<{ path: string; value: number }>
-  }>
+  updates: SignalKUpdate[]
+}
+
+/** A vessel position, as `navigation.position` carries it. */
+export interface VesselPosition {
+  latitude: number
+  longitude: number
 }
 
 /**
- * Turn a decoded chain count into a Signal K delta.
+ * The source for anything this plugin publishes about the chain.
  *
- * The source shape matches what the Quick PCS mapper emits, so a value from
- * this plugin is indistinguishable downstream from one that arrived through
- * canboatjs.
+ * The talker identifier is payload rather than a CAN source address, but it is
+ * the closest thing to a device reference a Quick frame carries.
  */
-export function buildChainCountDelta(
+export function quickSource(chainCount: ChainCount): SignalKSource {
+  return {
+    label: 'Quick PCS',
+    type: 'QuickPCS',
+    pgn: QUICK_CHAIN_COUNT_CAN_ID,
+    src: String(chainCount.sourceAddress)
+  }
+}
+
+/**
+ * The deployed chain length, in metres.
+ *
+ * The anchor position, state and watch zone are the anchor alarm's to publish,
+ * not ours; this is only the reading straight off the bus.
+ */
+export function buildRodeLengthDelta(
   chainCount: ChainCount,
   timestamp: string = new Date().toISOString()
 ): SignalKDelta {
   return {
     updates: [
       {
-        source: {
-          label: 'Quick PCS',
-          type: 'QuickPCS',
-          pgn: QUICK_CHAIN_COUNT_CAN_ID,
-          // The talker identifier is payload, not a CAN source address, but it
-          // is the closest thing to a device reference Quick frames carry.
-          src: String(chainCount.sourceAddress)
-        },
+        source: quickSource(chainCount),
         timestamp,
         values: [
           {
-            path: RODE_DEPLOYED_PATH,
+            path: RODE_LENGTH_PATH,
             value: chainDeployedMetres(chainCount)
           }
         ]
       }
     ]
   }
+}
+
+/**
+ * Read a `navigation.position` value, rejecting anything that is not a usable
+ * latitude/longitude pair. Returns undefined rather than a partial position, so
+ * a bad fix cannot become an anchor location.
+ */
+export function readVesselPosition(value: unknown): VesselPosition | undefined {
+  if (typeof value !== 'object' || value === null) {
+    return undefined
+  }
+  const { latitude, longitude } = value as {
+    latitude?: unknown
+    longitude?: unknown
+  }
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+    return undefined
+  }
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return undefined
+  }
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+    return undefined
+  }
+  return { latitude, longitude }
 }
