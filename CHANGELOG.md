@@ -11,6 +11,7 @@ First release.
   reports feet.
 - Drives an anchor alarm from the chain counter: drops it when the chain goes
   out, grows and shrinks the watch zone as chain is let out and taken in, and
-  raises it when the chain comes all the way in.
+  raises it when the chain comes all the way in. Hoekens Anchor Alarm is
+  declared under `signalk.requires` so the app store installs it too.
 - No runtime dependencies: the native SocketCAN binding is taken from the
   `@canboat/canboatjs` the server already installed and built.

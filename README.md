@@ -33,9 +33,12 @@ frame that is understood, and nothing else.
   ```
 
 - A Signal K server, which supplies the SocketCAN binding (see below).
-- Optionally, [Hoekens Anchor
-  Alarm](https://github.com/hoeken/hoekens-anchor-alarm) — or another plugin
-  that accepts `navigation.anchor.position` — to do the anchor watch.
+- [Hoekens Anchor
+  Alarm](https://github.com/hoeken/hoekens-anchor-alarm), declared under
+  `signalk.requires` so the app store installs it alongside this plugin and
+  flags it when missing. Another plugin that accepts
+  `navigation.anchor.position` will do instead — point the **Anchor alarm
+  plugin id** setting at it.
 
 ## Install
 
@@ -65,9 +68,14 @@ Anchor watch is not something this plugin reimplements. It reports how much
 chain is over the side and lets an anchor alarm own the drag alarm, the watch
 zone and the session log.
 
+Hoekens Anchor Alarm is declared under `signalk.requires`, so the app store
+installs it with this plugin and warns when it is missing. It is not an npm
+dependency: plugins are not npm dependencies of one another, and a second copy
+installed under this plugin's `node_modules` would never be the one the server
+had enabled anyway.
+
 It talks to the alarm through the server's action handlers, which is why there
-is no HTTP call, no port to discover, no JWT to obtain and no dependency on the
-alarm being installed:
+is no HTTP call, no port to discover and no JWT to obtain:
 
 | Chain counter | What the alarm is asked to do |
 |---|---|

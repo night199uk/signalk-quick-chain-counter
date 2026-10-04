@@ -32,7 +32,10 @@
   ],
   "signalk": {
     "displayName": "Quick Chain Counter",
-    "appIcon": "icon.png"
+    "appIcon": "icon.png",
+    "requires": [
+      "hoekens-anchor-alarm"
+    ]
   },
   "author": "Signal K",
   "license": "Apache-2.0",
