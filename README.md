@@ -133,6 +133,12 @@ npm test          # mocha
 npm run build     # tsc -> dist/
 ```
 
+**`dist/` is committed.** The Signal K server installs plugins with
+`npm --save --ignore-scripts`, so nothing runs `prepare` and nothing builds a
+plugin on the way in. A plugin installed straight from git therefore has to
+arrive already built. Run `npm run build` and commit `dist/` with any change to
+`src/`; CI fails if the two drift apart.
+
 The decoder, the delta shaping, the anchor-alarm planning and the bridge are
 unit tested. The native read path is not: it needs a real (or virtual) CAN
 interface, which a build machine generally does not have.

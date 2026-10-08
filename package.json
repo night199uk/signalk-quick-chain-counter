@@ -13,7 +13,6 @@
     "build": "tsc -b --pretty false",
     "watch": "tsc --watch --pretty false",
     "test": "mocha --require ts-node/register 'test/**/*.ts'",
-    "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },
   "engines": {

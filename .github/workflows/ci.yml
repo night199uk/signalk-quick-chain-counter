@@ -60,3 +60,32 @@ jobs:
       node-versions: ${{ inputs.node-versions }}
       enable-armv7: ${{ inputs.enable-armv7 }}
       enable-signalk-integration: ${{ inputs.enable-signalk-integration }}
+
+  # dist/ is committed so the plugin works when installed straight from git.
+  # The server installs plugins with `npm --save --ignore-scripts`, so nothing
+  # ever runs `prepare` to build it, and a git checkout would otherwise ship a
+  # package whose "main" does not exist. That only holds while dist/ is not
+  # stale, which is what this job is for.
+  built-output:
+    name: dist is in sync with src
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: dist/ must match a fresh build
+        run: |
+          if ! git diff --quiet -- dist; then
+            echo "::error::dist/ is out of date. Run 'npm run build' and commit the result."
+            git --no-pager diff --stat -- dist
+            exit 1
+          fi
+          echo "dist/ matches a fresh build"
