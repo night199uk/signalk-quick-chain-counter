@@ -18,6 +18,11 @@ The chain length is in metres whatever the device reports: Quick says whether
 the value is in metres or feet, and feet are converted rather than relabelled,
 so 107 ft arrives as 32.6136 m and not 107 m.
 
+The reading is latched, not periodic. The counter only sends a frame when the
+length changes, so `navigation.anchor.rodeLength` is marked as an event-driven
+path with `timeout: 0`: a long pause at the same chain length means "still the
+same length", not "the sensor died", and the server will not null it.
+
 ## Why it exists
 
 Quick support is not in a released version of canboat or canboatjs yet, so the

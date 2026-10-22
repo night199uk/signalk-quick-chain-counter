@@ -121,6 +121,20 @@ function quickChainCounter(app) {
         start(config = {}) {
             const canInterface = config.canInterface || exports.DEFAULT_CAN_INTERFACE;
             try {
+                // Claim the path before the first reading so a steady chain length is
+                // never mistaken for a dead sensor. The chain counter sends nothing
+                // while the length is unchanged.
+                //
+                // setDefaultMetadata is where the server's staleness enforcer looks for
+                // meta, so prefer it; older servers only understand a meta delta.
+                if (typeof app.setDefaultMetadata === 'function') {
+                    app
+                        .setDefaultMetadata(decode_1.RODE_LENGTH_PATH, delta_1.RODE_LENGTH_META)
+                        .catch((error) => app.debug(`could not persist ${decode_1.RODE_LENGTH_PATH} metadata: ${error.message}`));
+                }
+                else {
+                    app.handleMessage(exports.PLUGIN_ID, (0, delta_1.buildRodeLengthMetaDelta)());
+                }
                 reader = new canReader_1.CanReader({
                     canInterface,
                     addonDir: config.canboatjsPath || undefined,

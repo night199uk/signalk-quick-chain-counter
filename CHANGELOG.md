@@ -9,6 +9,9 @@ First release.
   support to land in canboat and canboatjs.
 - Publishes `navigation.anchor.rodeLength` in metres, converting when the frame
   reports feet.
+- Marks `navigation.anchor.rodeLength` as an event-driven, never-stale path
+  (`timeout: 0`), so a steady chain length is not nulled by the server's
+  staleness enforcer when the counter stops sending frames.
 - Drives an anchor alarm from the chain counter: drops it when the chain goes
   out, grows and shrinks the watch zone as chain is let out and taken in, and
   raises it when the chain comes all the way in. Hoekens Anchor Alarm is

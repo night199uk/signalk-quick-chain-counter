@@ -6,6 +6,7 @@ import quickChainCounter, {
   PLUGIN_ID,
   PluginApp
 } from '../src/plugin'
+import { buildRodeLengthMetaDelta, RODE_LENGTH_META } from '../src/delta'
 
 const CHAIN_COUNT_FRAME = Buffer.from('C1186B0000000200', 'hex')
 
@@ -67,6 +68,29 @@ describe('plugin lifecycle', () => {
 
     expect(calls.errors).to.have.length(1)
     expect(calls.errors[0]).to.contain('Could not read')
+    // The path metadata is claimed even when the bus cannot be opened; no
+    // chain reading is published.
+    expect(calls.messages).to.have.length(1)
+    expect(calls.messages[0]).to.have.property('updates')
+  })
+
+  it('persists the metadata where the staleness enforcer reads it', () => {
+    const { app, calls } = fakeApp()
+    const defaults: Array<{ path: string; value: unknown }> = []
+    app.setDefaultMetadata = async (path, value) => {
+      defaults.push({ path, value })
+      return true
+    }
+
+    quickChainCounter(app).start({ canboatjsPath: '/nonexistent/canboatjs' })
+
+    expect(defaults).to.deep.equal([
+      {
+        path: 'navigation.anchor.rodeLength',
+        value: RODE_LENGTH_META
+      }
+    ])
+    // No transient meta delta is needed when the server can persist it.
     expect(calls.messages).to.be.empty
   })
 
@@ -85,6 +109,20 @@ describe('plugin lifecycle', () => {
     plugin.stop()
 
     expect(calls.status).to.contain('Stopped')
+  })
+})
+
+describe('rode length metadata', () => {
+  it('marks the reading as never stale and event-driven', () => {
+    const delta = buildRodeLengthMetaDelta('2026-01-01T00:00:00.000Z')
+
+    expect(delta.updates[0].meta[0].path).to.equal(
+      'navigation.anchor.rodeLength'
+    )
+    expect(delta.updates[0].meta[0].value).to.deep.equal(RODE_LENGTH_META)
+    expect(RODE_LENGTH_META.timeout).to.equal(0)
+    expect(RODE_LENGTH_META.updateContract).to.equal('event')
+    expect(RODE_LENGTH_META.units).to.equal('m')
   })
 })
 

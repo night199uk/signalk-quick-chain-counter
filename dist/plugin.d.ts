@@ -1,5 +1,5 @@
 import { CanFrame } from './canReader';
-import { SignalKDelta } from './delta';
+import { SignalKDelta, SignalKMetaValue } from './delta';
 export declare const PLUGIN_ID = "signalk-quick-chain-counter";
 export declare const DEFAULT_CAN_INTERFACE = "can0";
 /** Watch zone radius as a multiple of the rode out: the swinging room. */
@@ -12,6 +12,11 @@ export interface PluginApp {
     setPluginError(message: string): void;
     handleMessage(pluginId: string, message: unknown): void;
     getSelfPath(path: string): unknown;
+    /**
+     * Persist default metadata for a path. Older servers do not expose this, in
+     * which case the plugin falls back to publishing a meta delta.
+     */
+    setDefaultMetadata?(path: string, value: SignalKMetaValue): Promise<boolean>;
     putPath(path: string, value: unknown, updateCb: (err?: Error) => void, source: string): Promise<unknown>;
 }
 export interface PluginConfig {

@@ -37,9 +37,17 @@ import { CanFrame, CanReader, isChainCountFrame } from './canReader'
 import {
   chainDeployedMetres,
   decodeChainCount,
-  QUICK_CHAIN_COUNT_CAN_ID
+  QUICK_CHAIN_COUNT_CAN_ID,
+  RODE_LENGTH_PATH
 } from './decode'
-import { buildRodeLengthDelta, readVesselPosition, SignalKDelta } from './delta'
+import {
+  buildRodeLengthDelta,
+  buildRodeLengthMetaDelta,
+  readVesselPosition,
+  RODE_LENGTH_META,
+  SignalKDelta,
+  SignalKMetaValue
+} from './delta'
 
 export const PLUGIN_ID = 'signalk-quick-chain-counter'
 export const DEFAULT_CAN_INTERFACE = 'can0'
@@ -55,6 +63,14 @@ export interface PluginApp {
   setPluginError(message: string): void
   handleMessage(pluginId: string, message: unknown): void
   getSelfPath(path: string): unknown
+  /**
+   * Persist default metadata for a path. Older servers do not expose this, in
+   * which case the plugin falls back to publishing a meta delta.
+   */
+  setDefaultMetadata?(
+    path: string,
+    value: SignalKMetaValue
+  ): Promise<boolean>
   putPath(
     path: string,
     value: unknown,
@@ -186,6 +202,24 @@ export default function quickChainCounter(
       const canInterface = config.canInterface || DEFAULT_CAN_INTERFACE
 
       try {
+        // Claim the path before the first reading so a steady chain length is
+        // never mistaken for a dead sensor. The chain counter sends nothing
+        // while the length is unchanged.
+        //
+        // setDefaultMetadata is where the server's staleness enforcer looks for
+        // meta, so prefer it; older servers only understand a meta delta.
+        if (typeof app.setDefaultMetadata === 'function') {
+          app
+            .setDefaultMetadata(RODE_LENGTH_PATH, RODE_LENGTH_META)
+            .catch((error: Error) =>
+              app.debug(
+                `could not persist ${RODE_LENGTH_PATH} metadata: ${error.message}`
+              )
+            )
+        } else {
+          app.handleMessage(PLUGIN_ID, buildRodeLengthMetaDelta())
+        }
+
         reader = new CanReader({
           canInterface,
           addonDir: config.canboatjsPath || undefined,

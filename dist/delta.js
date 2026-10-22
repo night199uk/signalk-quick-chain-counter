@@ -15,8 +15,10 @@
  * limitations under the License.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.RODE_LENGTH_META = void 0;
 exports.quickSource = quickSource;
 exports.buildRodeLengthDelta = buildRodeLengthDelta;
+exports.buildRodeLengthMetaDelta = buildRodeLengthMetaDelta;
 exports.readVesselPosition = readVesselPosition;
 const decode_1 = require("./decode");
 /**
@@ -51,6 +53,38 @@ function buildRodeLengthDelta(chainCount, timestamp = new Date().toISOString()) 
                         value: (0, decode_1.chainDeployedMetres)(chainCount)
                     }
                 ]
+            }
+        ]
+    };
+}
+/**
+ * Metadata for the deployed chain length.
+ *
+ * The chain counter only sends a frame when the count changes, and Signal K's
+ * staleness enforcer would otherwise turn a long pause at a steady length into
+ * a null. `timeout: 0` is the explicit "never expire" setting; `updateContract:
+ * 'event'` says the same thing in the vocabulary newer servers use, where a
+ * silent path is unchanged state rather than a failed sensor. The reading is a
+ * latched value, not a periodic measurement.
+ */
+exports.RODE_LENGTH_META = {
+    units: 'm',
+    description: 'Deployed anchor chain length',
+    timeout: 0,
+    updateContract: 'event'
+};
+/**
+ * The metadata delta for `navigation.anchor.rodeLength`.
+ *
+ * Published once when the plugin starts, rather than attached to every reading:
+ * metadata is per path, and the chain counter can send several frames a second.
+ */
+function buildRodeLengthMetaDelta(timestamp = new Date().toISOString()) {
+    return {
+        updates: [
+            {
+                timestamp,
+                meta: [{ path: decode_1.RODE_LENGTH_PATH, value: exports.RODE_LENGTH_META }]
             }
         ]
     };
