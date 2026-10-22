@@ -61,6 +61,58 @@ export interface AnchorAlarmState {
 
 export const IDLE: AnchorAlarmState = { deployed: false }
 
+/** How many chain readings to wait for the alarm to publish its state. */
+const INITIAL_STATE_ATTEMPTS = 5
+
+function finiteRadius(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : undefined
+}
+
+/**
+ * Read the anchor alarm's current state from the Signal K tree.
+ *
+ * Returns undefined until the alarm has published anything, so a plugin that
+ * starts before the alarm can wait a frame instead of mistaking "not started
+ * yet" for "no anchor down".
+ */
+export function readAnchorAlarmState(
+  getSelfPath: (path: string) => unknown
+): AnchorAlarmState | undefined {
+  const state = getSelfPath('navigation.anchor.state.value')
+  const position = getSelfPath('navigation.anchor.position.value')
+  const maxRadius = getSelfPath('navigation.anchor.maxRadius.value')
+  const watchZone = getSelfPath('navigation.anchor.watchZone.value')
+
+  if (
+    state === undefined &&
+    position === undefined &&
+    maxRadius === undefined &&
+    watchZone === undefined
+  ) {
+    return undefined
+  }
+
+  const deployed =
+    state === 'on' ||
+    (state !== 'off' && typeof position === 'object' && position !== null)
+
+  if (!deployed) {
+    return { deployed: false }
+  }
+
+  const radius =
+    finiteRadius(maxRadius) ??
+    finiteRadius(
+      typeof watchZone === 'object' && watchZone !== null
+        ? (watchZone as { radius?: unknown }).radius
+        : undefined
+    )
+
+  return radius === undefined ? { deployed: true } : { deployed: true, radius }
+}
+
 /**
  * Decide what the anchor alarm should do about one chain counter reading.
  *
@@ -185,6 +237,13 @@ export async function applyAnchorAction(
 }
 
 /**
+ * Reads the alarm's current state so the bridge can adopt an anchor that
+ * survived a plugin or server restart instead of dropping a new one over it.
+ * Omit it to keep the old "first positive reading is a drop" behaviour.
+ */
+export type InitialStateReader = () => AnchorAlarmState | undefined
+
+/**
  * Tracks the anchor alarm's state and keeps it in step with the chain counter.
  *
  * Once nothing is listening the bridge stops trying, so a boat without an
@@ -199,15 +258,56 @@ export class AnchorAlarmBridge {
    * comes all the way in and a new deployment is genuinely ours to make.
    */
   private paused = false
+  private initialized = false
+  private initAttempts = 0
+  /**
+   * False until the chain has been seen fully in. A plugin restart while the
+   * counter holds a stale positive value must not look like a fresh drop.
+   */
+  private armed: boolean
 
   constructor(
     private readonly app: PutApp,
     private readonly scope: number,
-    private readonly source: string = DEFAULT_ANCHOR_ALARM_SOURCE
-  ) {}
+    private readonly source: string = DEFAULT_ANCHOR_ALARM_SOURCE,
+    private readonly readInitialState?: InitialStateReader
+  ) {
+    this.armed = readInitialState === undefined
+  }
 
   isDisabled(): boolean {
     return this.disabled
+  }
+
+  private initialize(): boolean {
+    if (this.initialized) {
+      return true
+    }
+
+    if (!this.readInitialState) {
+      this.initialized = true
+      return true
+    }
+
+    const initial = this.readInitialState()
+    if (initial === undefined) {
+      // The alarm has not published its state yet (it may start after us), so
+      // wait a few frames rather than treating silence as "no anchor down".
+      this.initAttempts += 1
+      if (this.initAttempts < INITIAL_STATE_ATTEMPTS) {
+        return false
+      }
+    }
+
+    this.initialized = true
+    if (initial?.deployed) {
+      this.state = initial
+      this.paused = false
+    } else {
+      // Starting with no anchor: only a genuine 0 -> positive edge may drop.
+      this.armed = false
+    }
+    return true
   }
 
   async update(
@@ -218,11 +318,16 @@ export class AnchorAlarmBridge {
       return
     }
 
+    if (!this.initialize()) {
+      return
+    }
+
     if (!(metres > 0)) {
       // Chain fully in. Whatever the alarm made of our raise, the anchor is up
       // and the next deployment is a fresh one, so reset rather than trusting
       // an acknowledgement we may never get.
       const wasDeployed = this.state.deployed
+      this.armed = true
       this.paused = false
       this.state = IDLE
       if (wasDeployed) {
@@ -232,6 +337,13 @@ export class AnchorAlarmBridge {
     }
 
     if (this.paused) {
+      return
+    }
+
+    // A positive reading at startup is not proof that anything went out: the
+    // counter may be holding the previous deployment's value. Wait for it to
+    // pass through zero unless the alarm already has an anchor we adopted.
+    if (!this.state.deployed && !this.armed) {
       return
     }
 
@@ -274,5 +386,8 @@ export class AnchorAlarmBridge {
     this.state = IDLE
     this.disabled = false
     this.paused = false
+    this.initialized = false
+    this.initAttempts = 0
+    this.armed = this.readInitialState === undefined
   }
 }

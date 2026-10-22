@@ -6,7 +6,8 @@ import {
   AnchorAlarmState,
   IDLE,
   planAnchorAction,
-  PutApp
+  PutApp,
+  readAnchorAlarmState
 } from '../src/anchorAlarm'
 import { VesselPosition } from '../src/delta'
 
@@ -25,6 +26,61 @@ function plan(
 ) {
   return planAnchorAction(state, metres, position, scope)
 }
+
+describe('readAnchorAlarmState', () => {
+  function reader(values: Record<string, unknown>) {
+    return (path: string) => values[path]
+  }
+
+  it('waits until the alarm has published something', () => {
+    expect(readAnchorAlarmState(() => undefined)).to.equal(undefined)
+  })
+
+  it('reads an anchor that is already down and its circle radius', () => {
+    const state = readAnchorAlarmState(
+      reader({
+        'navigation.anchor.state.value': 'on',
+        'navigation.anchor.position.value': { latitude: 1, longitude: 2 },
+        'navigation.anchor.maxRadius.value': 48,
+        'navigation.anchor.watchZone.value': { type: 'circle', radius: 48 }
+      })
+    )
+
+    expect(state).to.deep.equal({ deployed: true, radius: 48 })
+  })
+
+  it('falls back to the watch zone radius', () => {
+    const state = readAnchorAlarmState(
+      reader({
+        'navigation.anchor.state.value': 'on',
+        'navigation.anchor.watchZone.value': { type: 'circle', radius: 32 }
+      })
+    )
+
+    expect(state).to.deep.equal({ deployed: true, radius: 32 })
+  })
+
+  it('treats an off alarm as no anchor even if a position is retained', () => {
+    const state = readAnchorAlarmState(
+      reader({
+        'navigation.anchor.state.value': 'off',
+        'navigation.anchor.position.value': { latitude: 1, longitude: 2 }
+      })
+    )
+
+    expect(state).to.deep.equal({ deployed: false })
+  })
+
+  it('uses the position when the alarm does not publish a state', () => {
+    const state = readAnchorAlarmState(
+      reader({
+        'navigation.anchor.position.value': { latitude: 1, longitude: 2 }
+      })
+    )
+
+    expect(state).to.deep.equal({ deployed: true })
+  })
+})
 
 describe('planAnchorAction', () => {
   it('drops the anchor when the chain first goes out', () => {
@@ -267,6 +323,95 @@ describe('AnchorAlarmBridge', () => {
       'vessels.self.navigation.anchor.position'
     )
     expect(calls[calls.length - 1].value).to.deep.include({ radius: 20 })
+  })
+
+  it('adopts an anchor that is already down instead of re-dropping', async () => {
+    const { app, calls } = fakeApp()
+    const bridge = new AnchorAlarmBridge(app, 1, undefined, () => ({
+      deployed: true,
+      radius: 48
+    }))
+
+    await bridge.update(20, HERE)
+
+    expect(calls).to.deep.equal([
+      {
+        path: 'vessels.self.navigation.anchor.maxRadius',
+        value: 20,
+        source: 'hoekens-anchor-alarm'
+      }
+    ])
+  })
+
+  it('waits for the alarm to publish its state', async () => {
+    const { app, calls } = fakeApp()
+    let initial: AnchorAlarmState | undefined
+    const bridge = new AnchorAlarmBridge(app, 1, undefined, () => initial)
+
+    await bridge.update(30, HERE)
+    expect(calls).to.be.empty
+
+    initial = { deployed: true, radius: 30 }
+    await bridge.update(30, HERE) // adopted, nothing to change
+    expect(calls).to.be.empty
+
+    await bridge.update(45, HERE)
+    expect(calls).to.deep.equal([
+      {
+        path: 'vessels.self.navigation.anchor.maxRadius',
+        value: 45,
+        source: 'hoekens-anchor-alarm'
+      }
+    ])
+  })
+
+  it('does not drop on a stale positive reading when the alarm is off', async () => {
+    const { app, calls } = fakeApp()
+    const bridge = new AnchorAlarmBridge(app, 1, undefined, () => ({
+      deployed: false
+    }))
+
+    await bridge.update(30, HERE)
+    expect(calls).to.be.empty
+
+    await bridge.update(0, HERE) // chain seen in: now armed
+    expect(calls).to.be.empty
+
+    await bridge.update(30, HERE)
+    expect(calls.map((c) => c.path)).to.deep.equal([
+      'vessels.self.navigation.anchor.position'
+    ])
+  })
+
+  it('drops normally when the alarm starts off and the chain starts in', async () => {
+    const { app, calls } = fakeApp()
+    const bridge = new AnchorAlarmBridge(app, 1, undefined, () => ({
+      deployed: false
+    }))
+
+    await bridge.update(0, HERE)
+    expect(calls).to.be.empty
+
+    await bridge.update(30, HERE)
+    expect(calls[0].value).to.deep.include({ radius: 30 })
+  })
+
+  it('raises an adopted anchor when the chain comes in', async () => {
+    const { app, calls } = fakeApp()
+    const bridge = new AnchorAlarmBridge(app, 1, undefined, () => ({
+      deployed: true,
+      radius: 30
+    }))
+
+    await bridge.update(0, HERE)
+
+    expect(calls).to.deep.equal([
+      {
+        path: 'vessels.self.navigation.anchor.position',
+        value: null,
+        source: 'hoekens-anchor-alarm'
+      }
+    ])
   })
 
   it('does nothing at all when disabled', async () => {

@@ -31,7 +31,8 @@
 
 import {
   AnchorAlarmBridge,
-  DEFAULT_ANCHOR_ALARM_SOURCE
+  DEFAULT_ANCHOR_ALARM_SOURCE,
+  readAnchorAlarmState
 } from './anchorAlarm'
 import { CanFrame, CanReader, isChainCountFrame } from './canReader'
 import {
@@ -236,7 +237,8 @@ export default function quickChainCounter(
             : new AnchorAlarmBridge(
                 app,
                 config.radiusScope || DEFAULT_RADIUS_SCOPE,
-                config.anchorAlarmSource || DEFAULT_ANCHOR_ALARM_SOURCE
+                config.anchorAlarmSource || DEFAULT_ANCHOR_ALARM_SOURCE,
+                () => readAnchorAlarmState((path) => app.getSelfPath(path))
               )
 
         app.setPluginStatus(

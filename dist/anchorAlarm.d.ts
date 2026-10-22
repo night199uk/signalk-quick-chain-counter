@@ -19,6 +19,14 @@ export interface AnchorAlarmState {
 }
 export declare const IDLE: AnchorAlarmState;
 /**
+ * Read the anchor alarm's current state from the Signal K tree.
+ *
+ * Returns undefined until the alarm has published anything, so a plugin that
+ * starts before the alarm can wait a frame instead of mistaking "not started
+ * yet" for "no anchor down".
+ */
+export declare function readAnchorAlarmState(getSelfPath: (path: string) => unknown): AnchorAlarmState | undefined;
+/**
  * Decide what the anchor alarm should do about one chain counter reading.
  *
  * As the chain spools out the watch zone grows with it, so the alarm tracks the
@@ -47,6 +55,12 @@ export interface PutApp {
 export type ApplyResult = 'ok' | 'refused' | 'unavailable';
 export declare function applyAnchorAction(app: PutApp, action: AnchorAction, source?: string): Promise<ApplyResult>;
 /**
+ * Reads the alarm's current state so the bridge can adopt an anchor that
+ * survived a plugin or server restart instead of dropping a new one over it.
+ * Omit it to keep the old "first positive reading is a drop" behaviour.
+ */
+export type InitialStateReader = () => AnchorAlarmState | undefined;
+/**
  * Tracks the anchor alarm's state and keeps it in step with the chain counter.
  *
  * Once nothing is listening the bridge stops trying, so a boat without an
@@ -56,6 +70,7 @@ export declare class AnchorAlarmBridge {
     private readonly app;
     private readonly scope;
     private readonly source;
+    private readonly readInitialState?;
     private state;
     private disabled;
     /**
@@ -64,8 +79,16 @@ export declare class AnchorAlarmBridge {
      * comes all the way in and a new deployment is genuinely ours to make.
      */
     private paused;
-    constructor(app: PutApp, scope: number, source?: string);
+    private initialized;
+    private initAttempts;
+    /**
+     * False until the chain has been seen fully in. A plugin restart while the
+     * counter holds a stale positive value must not look like a fresh drop.
+     */
+    private armed;
+    constructor(app: PutApp, scope: number, source?: string, readInitialState?: InitialStateReader | undefined);
     isDisabled(): boolean;
+    private initialize;
     update(metres: number, position: VesselPosition | undefined): Promise<void>;
     reset(): void;
 }

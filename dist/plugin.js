@@ -146,7 +146,7 @@ function quickChainCounter(app) {
                 bridge =
                     config.driveAnchorAlarm === false
                         ? undefined
-                        : new anchorAlarm_1.AnchorAlarmBridge(app, config.radiusScope || exports.DEFAULT_RADIUS_SCOPE, config.anchorAlarmSource || anchorAlarm_1.DEFAULT_ANCHOR_ALARM_SOURCE);
+                        : new anchorAlarm_1.AnchorAlarmBridge(app, config.radiusScope || exports.DEFAULT_RADIUS_SCOPE, config.anchorAlarmSource || anchorAlarm_1.DEFAULT_ANCHOR_ALARM_SOURCE, () => (0, anchorAlarm_1.readAnchorAlarmState)((path) => app.getSelfPath(path)));
                 app.setPluginStatus(`Listening for Quick chain counter frames on ${canInterface}`);
             }
             catch (error) {

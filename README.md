@@ -94,6 +94,14 @@ chain is still out, the plugin notices the alarm refusing to resize and leaves
 it alone — it will not fight you by re-dropping. It takes over again after the
 chain has been all the way in.
 
+**Startup adopts the alarm's state.** On start the plugin reads
+`navigation.anchor.state`, `navigation.anchor.position` and the current circle
+radius. If an anchor survived a plugin or server restart it keeps that anchor
+and only resizes it, rather than dropping a new one at the boat's current
+position. If the alarm is off while the counter already reads positive, it waits
+for the chain to pass through zero before treating a positive reading as a fresh
+deployment.
+
 **The source is named deliberately.** The server records each PUT handler under
 the id of the plugin that registered it, and rejects a PUT with no source as
 ambiguous once more than one anchor alarm is installed. Hence the *Anchor alarm

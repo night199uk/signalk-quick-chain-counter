@@ -16,5 +16,9 @@ First release.
   out, grows and shrinks the watch zone as chain is let out and taken in, and
   raises it when the chain comes all the way in. Hoekens Anchor Alarm is
   declared under `signalk.requires` so the app store installs it too.
+- Adopts an anchor that survived a plugin or server restart instead of
+  re-dropping it at the boat's current position, and waits for a real
+  0 → positive edge before treating a positive counter reading as a new
+  deployment.
 - No runtime dependencies: the native SocketCAN binding is taken from the
   `@canboat/canboatjs` the server already installed and built.
