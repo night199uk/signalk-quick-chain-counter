@@ -115,9 +115,14 @@ function planAnchorAction(state, metres, position, scope) {
     }
     return { action: { kind: 'none' }, state };
 }
+/** Hoeken's message when the operator raised the anchor behind our back. */
+const NO_ANCHOR_DOWN = /no anchor is currently dropped/i;
+function isAnchorGone(message) {
+    return NO_ANCHOR_DOWN.test(message ?? '');
+}
 async function applyAnchorAction(app, action, source = exports.DEFAULT_ANCHOR_ALARM_SOURCE) {
     if (action.kind === 'none') {
-        return 'ok';
+        return { status: 'ok' };
     }
     const path = action.kind === 'setRadius' ? decode_1.ANCHOR_MAX_RADIUS_PATH : decode_1.ANCHOR_POSITION_PATH;
     const value = action.kind === 'drop'
@@ -136,18 +141,18 @@ async function applyAnchorAction(app, action, source = exports.DEFAULT_ANCHOR_AL
         const statusCode = reply?.statusCode;
         if (statusCode === undefined || statusCode === 200) {
             app.debug(`anchor alarm: ${action.kind} on ${path}`);
-            return 'ok';
+            return { status: 'ok' };
         }
         if (statusCode === 405) {
             app.debug(`nothing handles ${path} for ${source}`);
-            return 'unavailable';
+            return { status: 'unavailable' };
         }
         app.debug(`anchor alarm refused ${action.kind} on ${path}: ${statusCode} ${reply.message ?? ''}`.trim());
-        return 'refused';
+        return { status: 'refused', message: reply.message };
     }
     catch (error) {
         app.debug(`anchor alarm ${action.kind} on ${path} failed: ${error.message}`);
-        return 'unavailable';
+        return { status: 'unavailable' };
     }
 }
 /**
@@ -239,7 +244,8 @@ class AnchorAlarmBridge {
             this.state = state;
             return;
         }
-        switch (await applyAnchorAction(this.app, action, this.source)) {
+        const result = await applyAnchorAction(this.app, action, this.source);
+        switch (result.status) {
             case 'ok':
                 this.state = state;
                 return;
@@ -249,9 +255,13 @@ class AnchorAlarmBridge {
                 return;
             case 'refused':
                 // A refused drop is worth retrying — the boat may have no GPS fix yet,
-                // and Hoeken's refuses to drop outside the requested zone. A refused
-                // resize is not: it means there is no anchor down to resize.
-                if (action.kind === 'setRadius') {
+                // and Hoeken's refuses to drop outside the requested zone.
+                //
+                // A refused resize is only permanent when the alarm says the anchor is
+                // gone; that means the operator raised it by hand. "Boat is outside the
+                // watch zone." and "no GPS position available" are transient, so retry
+                // them on the next reading instead of freezing the old radius.
+                if (action.kind === 'setRadius' && isAnchorGone(result.message)) {
                     this.paused = true;
                     this.app.debug('anchor alarm has no anchor down; leaving it alone until the chain comes in');
                 }

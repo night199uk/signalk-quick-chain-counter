@@ -94,6 +94,11 @@ chain is still out, the plugin notices the alarm refusing to resize and leaves
 it alone — it will not fight you by re-dropping. It takes over again after the
 chain has been all the way in.
 
+Not every refusal means the anchor is up. Hoeken also refuses a shrink while
+the boat is outside the requested smaller zone, and while there is no GPS fix.
+Those are transient, so the plugin retries them on later readings rather than
+freezing the previous, larger radius.
+
 **Startup adopts the alarm's state.** On start the plugin reads
 `navigation.anchor.state`, `navigation.anchor.position` and the current circle
 radius. If an anchor survived a plugin or server restart it keeps that anchor

@@ -20,5 +20,8 @@ First release.
   re-dropping it at the boat's current position, and waits for a real
   0 → positive edge before treating a positive counter reading as a new
   deployment.
+- Distinguishes a transient resize refusal (the boat is outside the new zone,
+  or there is no GPS fix) from the operator raising the anchor, so a refused
+  shrink is retried rather than leaving the old, larger radius in place.
 - No runtime dependencies: the native SocketCAN binding is taken from the
   `@canboat/canboatjs` the server already installed and built.

@@ -143,12 +143,12 @@ describe('planAnchorAction', () => {
 })
 
 describe('applyAnchorAction', () => {
-  function fakeApp(statusCode = 200) {
+  function fakeApp(statusCode = 200, message?: string) {
     const calls: Array<{ path: string; value: unknown; source: string }> = []
     const app: PutApp = {
       putPath: async (path, value, _cb, source) => {
         calls.push({ path, value, source })
-        return { statusCode }
+        return { statusCode, message }
       },
       debug: () => undefined,
       error: () => undefined
@@ -165,7 +165,7 @@ describe('applyAnchorAction', () => {
       radius: 30
     })
 
-    expect(result).to.equal('ok')
+    expect(result).to.deep.equal({ status: 'ok' })
     expect(calls).to.deep.equal([
       {
         path: 'vessels.self.navigation.anchor.position',
@@ -210,27 +210,30 @@ describe('applyAnchorAction', () => {
   it('reports nothing listening as unavailable', async () => {
     const { app } = fakeApp(405)
 
-    expect(await applyAnchorAction(app, { kind: 'raise' })).to.equal(
-      'unavailable'
-    )
+    expect(await applyAnchorAction(app, { kind: 'raise' })).to.deep.equal({
+      status: 'unavailable'
+    })
   })
 
-  it('reports a refused action as refused, so it can be retried', async () => {
-    const { app } = fakeApp(502)
+  it('carries the alarm message on a refusal', async () => {
+    const { app } = fakeApp(502, 'Boat is outside the watch zone.')
 
     expect(
       await applyAnchorAction(app, { kind: 'drop', position: HERE, radius: 30 })
-    ).to.equal('refused')
+    ).to.deep.equal({
+      status: 'refused',
+      message: 'Boat is outside the watch zone.'
+    })
   })
 })
 
 describe('AnchorAlarmBridge', () => {
-  function fakeApp(statusCode = 200) {
+  function fakeApp(statusCode = 200, message?: string) {
     const calls: Array<{ path: string; value: unknown; source: string }> = []
     const app: PutApp = {
       putPath: async (path, value, _cb, source) => {
         calls.push({ path, value, source })
-        return { statusCode }
+        return { statusCode, message }
       },
       debug: () => undefined,
       error: () => undefined
@@ -285,14 +288,16 @@ describe('AnchorAlarmBridge', () => {
     // by re-dropping or re-resizing would be wrong.
     const { app, calls } = fakeApp()
     let statusCode = 200
+    let message: string | undefined
     app.putPath = async (path, value) => {
       calls.push({ path, value, source: 'hoekens-anchor-alarm' })
-      return { statusCode }
+      return { statusCode, message }
     }
     const bridge = new AnchorAlarmBridge(app, 1)
 
     await bridge.update(30, HERE) // drop, accepted
     statusCode = 502 // anchor raised by hand from here on
+    message = 'no anchor is currently dropped'
     await bridge.update(45, HERE) // resize refused
     await bridge.update(60, HERE) // and we stop asking
     await bridge.update(75, HERE)
@@ -303,20 +308,46 @@ describe('AnchorAlarmBridge', () => {
     ])
   })
 
+  it('retries a resize refused because the boat is outside the zone', async () => {
+    const { app, calls } = fakeApp()
+    let statusCode = 200
+    let message: string | undefined
+    app.putPath = async (path, value) => {
+      calls.push({ path, value, source: 'hoekens-anchor-alarm' })
+      return { statusCode, message }
+    }
+    const bridge = new AnchorAlarmBridge(app, 1)
+
+    await bridge.update(30, HERE) // drop
+    statusCode = 502
+    message = 'Boat is outside the watch zone.'
+    await bridge.update(45, HERE) // transient refusal
+    await bridge.update(60, HERE) // still worth trying
+
+    expect(calls.map((c) => c.path)).to.deep.equal([
+      'vessels.self.navigation.anchor.position',
+      'vessels.self.navigation.anchor.maxRadius',
+      'vessels.self.navigation.anchor.maxRadius'
+    ])
+  })
+
   it('takes over again after the chain has been all the way in', async () => {
     const { app, calls } = fakeApp()
     let statusCode = 200
+    let message: string | undefined
     app.putPath = async (path, value) => {
       calls.push({ path, value, source: 'hoekens-anchor-alarm' })
-      return { statusCode }
+      return { statusCode, message }
     }
     const bridge = new AnchorAlarmBridge(app, 1)
 
     await bridge.update(30, HERE)
     statusCode = 502
+    message = 'no anchor is currently dropped'
     await bridge.update(45, HERE) // refused, paused
     await bridge.update(0, HERE) // chain in: forgiven
     statusCode = 200
+    message = undefined
     await bridge.update(20, HERE) // a genuinely new deployment
 
     expect(calls[calls.length - 1].path).to.equal(
