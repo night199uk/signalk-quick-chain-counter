@@ -41,7 +41,7 @@ function quickSource(chainCount) {
  * The anchor position, state and watch zone are the anchor alarm's to publish,
  * not ours; this is only the reading straight off the bus.
  */
-function buildRodeLengthDelta(chainCount, timestamp = new Date().toISOString()) {
+function buildRodeLengthDelta(chainCount, timestamp = new Date().toISOString(), metres = (0, decode_1.chainDeployedMetres)(chainCount)) {
     return {
         updates: [
             {

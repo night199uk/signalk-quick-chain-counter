@@ -57,6 +57,17 @@ describe('plugin contract', () => {
     )
     expect(schema.properties.canInterface.type).to.equal('string')
   })
+
+  it('offers a chain unit override, defaulting to auto', () => {
+    const schema = quickChainCounter(fakeApp().app).schema() as typeof CONFIG_SCHEMA
+
+    expect(schema.properties.chainUnits.default).to.equal('auto')
+    expect(schema.properties.chainUnits.enum).to.deep.equal([
+      'auto',
+      'meters',
+      'feet'
+    ])
+  })
 })
 
 describe('plugin lifecycle', () => {

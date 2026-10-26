@@ -33,7 +33,10 @@
  */
 
 import * as path from 'path'
-import { QUICK_CHAIN_COUNT_CAN_ID } from './decode'
+import {
+  QUICK_CHAIN_CONFIG_CAN_ID,
+  QUICK_CHAIN_COUNT_CAN_ID
+} from './decode'
 
 export interface CanFrame {
   id: number
@@ -54,6 +57,11 @@ interface CanSocketModule {
 /** Only the chain count identifier is of interest; see the file comment. */
 export function isChainCountFrame(id: number): boolean {
   return id === QUICK_CHAIN_COUNT_CAN_ID
+}
+
+/** The configuration frame carries the gypsy-lap length used to scale 0x6C1. */
+export function isChainConfigFrame(id: number): boolean {
+  return id === QUICK_CHAIN_CONFIG_CAN_ID
 }
 
 /**
@@ -127,6 +135,7 @@ export interface CanReaderOptions {
   /** Explicit @canboat/canboatjs location, if auto-detection is not wanted. */
   addonDir?: string
   onFrame(frame: CanFrame): void
+  onConfigFrame?(frame: CanFrame): void
   onError(error: Error): void
   debug(...args: unknown[]): void
 }
@@ -157,6 +166,8 @@ export class CanReader {
     this.channel.addListener('onMessage', (frame) => {
       if (isChainCountFrame(frame.id)) {
         this.options.onFrame(frame)
+      } else if (isChainConfigFrame(frame.id)) {
+        this.options.onConfigFrame?.(frame)
       }
     })
     // The channel reports a bus error by stopping; surface it rather than

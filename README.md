@@ -6,17 +6,29 @@ an anchor alarm.
 
 ## What it does
 
-Quick windlasses report how much chain is out in a single CAN frame, message
-type `0x6C1`. This plugin listens for that frame and then:
+Quick windlasses report a gypsy lap count in CAN message `0x6C1`, and the
+length of one lap in `0x6C0`. This plugin listens for both and then:
 
 | | |
 |---|---|
 | **Publishes** | `navigation.anchor.rodeLength` — deployed chain length, in metres |
 | **Drives** | your anchor alarm: drops it when the chain goes out, raises it when the chain comes in, and grows the watch zone as more chain is let out |
 
-The chain length is in metres whatever the device reports: Quick says whether
-the value is in metres or feet, and feet are converted rather than relabelled,
-so 107 ft arrives as 32.6136 m and not 107 m.
+The `0x6C1` value is a **lap count**, not a length. `0x6C0` carries the gypsy
+lap in tenths of an inch, and the plugin multiplies the two:
+
+```
+148 laps × 13.0 in = 160.3 ft = 48.87 m
+```
+
+That is the case where the raw count and the displayed feet diverge. The
+original 12.0-inch setup happened to make 107 laps equal 107 ft, which is why
+the raw count looked like feet. The published `rodeLength` is always metres.
+
+If a device does not send `0x6C0`, the plugin falls back to the old unit
+interpretation. **Chain counter units** can force `meters` or `feet` for those;
+`auto` also treats a value larger than `design.totalAnchorChainLength` as feet
+rather than producing an impossible radius.
 
 The reading is latched, not periodic. The counter only sends a frame when the
 length changes, so `navigation.anchor.rodeLength` is marked as an event-driven
@@ -64,6 +76,7 @@ no network access beyond the package itself.
 | **CAN interface** | `can0` | The interface the Quick devices are on |
 | **Drive the anchor alarm** | on | Drop/raise/resize an anchor alarm from the chain counter |
 | **Watch zone radius, as a multiple of the rode** | `1.0` | The alarm radius is the chain length times this |
+| **Chain counter units** | `auto` | Fallback only: force `meters`/`feet` if `0x6C0` is missing |
 | **Anchor alarm plugin id** | `hoekens-anchor-alarm` | Whose `navigation.anchor.position` handler to drive |
 | **canboatjs location** | *(auto)* | Only set this if the automatic lookup fails |
 

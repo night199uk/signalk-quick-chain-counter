@@ -37,8 +37,13 @@ import {
 import { CanFrame, CanReader, isChainCountFrame } from './canReader'
 import {
   chainDeployedMetres,
+  chainDeployedMetresFromLap,
+  ChainUnitOverride,
+  decodeChainConfig,
   decodeChainCount,
+  QUICK_CHAIN_CONFIG_CAN_ID,
   QUICK_CHAIN_COUNT_CAN_ID,
+  resolveChainUnits,
   RODE_LENGTH_PATH
 } from './decode'
 import {
@@ -85,6 +90,7 @@ export interface PluginConfig {
   canboatjsPath?: string
   driveAnchorAlarm?: boolean
   radiusScope?: number
+  chainUnits?: ChainUnitOverride
   anchorAlarmSource?: string
 }
 
@@ -121,6 +127,14 @@ export const CONFIG_SCHEMA = {
         'The alarm radius is the chain length times this. 1.0 gives the boat exactly its swinging room.',
       default: DEFAULT_RADIUS_SCOPE
     },
+    chainUnits: {
+      type: 'string',
+      title: 'Chain counter units',
+      enum: ['auto', 'meters', 'feet'],
+      default: 'auto',
+      description:
+        'How the Quick counter reports chain length. Auto trusts the frame and treats a value larger than the total chain as feet; set feet if the counter displays feet but the frame reports metres.'
+    },
     anchorAlarmSource: {
       type: 'string',
       title: 'Anchor alarm plugin id',
@@ -135,6 +149,10 @@ export const CONFIG_SCHEMA = {
         'Directory holding @canboat/canboatjs, if it cannot be found automatically. Leave blank in normal use.'
     }
   }
+}
+
+function readFiniteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
 /**
@@ -163,6 +181,24 @@ export default function quickChainCounter(
 ): QuickChainCounterPlugin {
   let reader: CanReader | undefined
   let bridge: AnchorAlarmBridge | undefined
+  let chainUnits: ChainUnitOverride = 'auto'
+  const lapTenthsBySource = new Map<number, number>()
+  const missingLapWarned = new Set<number>()
+
+  function learnChainConfig(frame: CanFrame): void {
+    const config = decodeChainConfig(frame.data)
+    if (config === undefined) {
+      app.debug(
+        `ignoring unusable 0x${QUICK_CHAIN_CONFIG_CAN_ID.toString(16)} frame (${frame.data.length} bytes)`
+      )
+      return
+    }
+    lapTenthsBySource.set(config.sourceAddress, config.lapTenthsInch)
+    missingLapWarned.delete(config.sourceAddress)
+    app.debug(
+      `chain config from ${config.sourceAddress}: lap ${config.lapTenthsInch / 10} in`
+    )
+  }
 
   function publish(frame: CanFrame): void {
     const chainCount = decodeChainCount(frame.data)
@@ -173,11 +209,40 @@ export default function quickChainCounter(
       return
     }
 
-    const metres = chainDeployedMetres(chainCount)
+    const lapTenthsInch = lapTenthsBySource.get(chainCount.sourceAddress)
+    let metres: number
+    if (lapTenthsInch !== undefined && lapTenthsInch > 0) {
+      // 0x6C1 is a lap count; 0x6C0 says how long one lap is.
+      metres = chainDeployedMetresFromLap(chainCount, lapTenthsInch)
+    } else {
+      if (!missingLapWarned.has(chainCount.sourceAddress)) {
+        missingLapWarned.add(chainCount.sourceAddress)
+        app.debug(
+          `no 0x${QUICK_CHAIN_CONFIG_CAN_ID.toString(16)} gypsy lap for ${chainCount.sourceAddress}; falling back to the frame units`
+        )
+      }
+      const totalChainMetres = readFiniteNumber(
+        app.getSelfPath('design.totalAnchorChainLength.value')
+      )
+      const forceUnits = resolveChainUnits(
+        chainCount,
+        chainUnits,
+        totalChainMetres
+      )
+      if (forceUnits === 'Feet' && chainCount.units !== 'Feet') {
+        app.debug(
+          `chain count ${chainCount.chainDeployed} exceeds ${totalChainMetres}m total chain; treating it as feet`
+        )
+      }
+      metres = chainDeployedMetres(chainCount, forceUnits)
+    }
 
     // Publish first: the reading is ours whatever the anchor alarm does with
     // it, and it should land even if the alarm is absent or unhappy.
-    app.handleMessage(PLUGIN_ID, buildRodeLengthDelta(chainCount))
+    app.handleMessage(
+      PLUGIN_ID,
+      buildRodeLengthDelta(chainCount, undefined, metres)
+    )
 
     if (bridge) {
       // Only read the position when it is about to be used: the alarm keeps
@@ -201,6 +266,9 @@ export default function quickChainCounter(
 
     start(config: PluginConfig = {}): void {
       const canInterface = config.canInterface || DEFAULT_CAN_INTERFACE
+      chainUnits = config.chainUnits || 'auto'
+      lapTenthsBySource.clear()
+      missingLapWarned.clear()
 
       try {
         // Claim the path before the first reading so a steady chain length is
@@ -225,6 +293,7 @@ export default function quickChainCounter(
           canInterface,
           addonDir: config.canboatjsPath || undefined,
           onFrame: publish,
+          onConfigFrame: learnChainConfig,
           onError: (error) =>
             app.error(`error reading ${canInterface}: ${error.message}`),
           debug: app.debug

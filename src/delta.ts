@@ -86,7 +86,8 @@ export function quickSource(chainCount: ChainCount): SignalKSource {
  */
 export function buildRodeLengthDelta(
   chainCount: ChainCount,
-  timestamp: string = new Date().toISOString()
+  timestamp: string = new Date().toISOString(),
+  metres: number = chainDeployedMetres(chainCount)
 ): SignalKDelta {
   return {
     updates: [

@@ -50,6 +50,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CanReader = void 0;
 exports.isChainCountFrame = isChainCountFrame;
+exports.isChainConfigFrame = isChainConfigFrame;
 exports.candidateLookupPaths = candidateLookupPaths;
 exports.resolveCanboatjsDir = resolveCanboatjsDir;
 /**
@@ -74,6 +75,10 @@ const decode_1 = require("./decode");
 /** Only the chain count identifier is of interest; see the file comment. */
 function isChainCountFrame(id) {
     return id === decode_1.QUICK_CHAIN_COUNT_CAN_ID;
+}
+/** The configuration frame carries the gypsy-lap length used to scale 0x6C1. */
+function isChainConfigFrame(id) {
+    return id === decode_1.QUICK_CHAIN_CONFIG_CAN_ID;
 }
 /**
  * Candidate `node_modules` directories to search for canboatjs.
@@ -153,6 +158,9 @@ class CanReader {
         this.channel.addListener('onMessage', (frame) => {
             if (isChainCountFrame(frame.id)) {
                 this.options.onFrame(frame);
+            }
+            else if (isChainConfigFrame(frame.id)) {
+                this.options.onConfigFrame?.(frame);
             }
         });
         // The channel reports a bus error by stopping; surface it rather than

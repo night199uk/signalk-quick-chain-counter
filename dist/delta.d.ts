@@ -53,7 +53,7 @@ export declare function quickSource(chainCount: ChainCount): SignalKSource;
  * The anchor position, state and watch zone are the anchor alarm's to publish,
  * not ours; this is only the reading straight off the bus.
  */
-export declare function buildRodeLengthDelta(chainCount: ChainCount, timestamp?: string): SignalKDelta;
+export declare function buildRodeLengthDelta(chainCount: ChainCount, timestamp?: string, metres?: number): SignalKDelta;
 /**
  * Metadata for the deployed chain length.
  *

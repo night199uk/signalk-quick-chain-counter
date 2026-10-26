@@ -1,4 +1,5 @@
 import { CanFrame } from './canReader';
+import { ChainUnitOverride } from './decode';
 import { SignalKDelta, SignalKMetaValue } from './delta';
 export declare const PLUGIN_ID = "signalk-quick-chain-counter";
 export declare const DEFAULT_CAN_INTERFACE = "can0";
@@ -24,6 +25,7 @@ export interface PluginConfig {
     canboatjsPath?: string;
     driveAnchorAlarm?: boolean;
     radiusScope?: number;
+    chainUnits?: ChainUnitOverride;
     anchorAlarmSource?: string;
 }
 export interface QuickChainCounterPlugin {
@@ -54,6 +56,13 @@ export declare const CONFIG_SCHEMA: {
             title: string;
             description: string;
             default: number;
+        };
+        chainUnits: {
+            type: string;
+            title: string;
+            enum: string[];
+            default: string;
+            description: string;
         };
         anchorAlarmSource: {
             type: string;

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2
+
+- Decodes the gypsy lap length from `0x6C0` and multiplies the `0x6C1` lap
+  count by it. The `0x6C1` value is a lap count, not a chain length; a 13.0-inch
+  lap makes 148 laps 160.3 ft (48.87 m), not 148 ft.
+- Adds a chain-units fallback override (`auto`/`meters`/`feet`) for devices
+  that do not send `0x6C0`, with a total-chain sanity check in `auto`.
+
 ## 0.1.0
 
 First release.

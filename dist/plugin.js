@@ -61,6 +61,13 @@ exports.CONFIG_SCHEMA = {
             description: 'The alarm radius is the chain length times this. 1.0 gives the boat exactly its swinging room.',
             default: exports.DEFAULT_RADIUS_SCOPE
         },
+        chainUnits: {
+            type: 'string',
+            title: 'Chain counter units',
+            enum: ['auto', 'meters', 'feet'],
+            default: 'auto',
+            description: 'How the Quick counter reports chain length. Auto trusts the frame and treats a value larger than the total chain as feet; set feet if the counter displays feet but the frame reports metres.'
+        },
         anchorAlarmSource: {
             type: 'string',
             title: 'Anchor alarm plugin id',
@@ -74,6 +81,9 @@ exports.CONFIG_SCHEMA = {
         }
     }
 };
+function readFiniteNumber(value) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
 /**
  * Decode one raw frame into the delta for the deployed chain length.
  *
@@ -94,16 +104,46 @@ function frameToDelta(frame, timestamp) {
 function quickChainCounter(app) {
     let reader;
     let bridge;
+    let chainUnits = 'auto';
+    const lapTenthsBySource = new Map();
+    const missingLapWarned = new Set();
+    function learnChainConfig(frame) {
+        const config = (0, decode_1.decodeChainConfig)(frame.data);
+        if (config === undefined) {
+            app.debug(`ignoring unusable 0x${decode_1.QUICK_CHAIN_CONFIG_CAN_ID.toString(16)} frame (${frame.data.length} bytes)`);
+            return;
+        }
+        lapTenthsBySource.set(config.sourceAddress, config.lapTenthsInch);
+        missingLapWarned.delete(config.sourceAddress);
+        app.debug(`chain config from ${config.sourceAddress}: lap ${config.lapTenthsInch / 10} in`);
+    }
     function publish(frame) {
         const chainCount = (0, decode_1.decodeChainCount)(frame.data);
         if (chainCount === undefined) {
             app.debug(`ignoring unusable 0x${decode_1.QUICK_CHAIN_COUNT_CAN_ID.toString(16)} frame (${frame.data.length} bytes)`);
             return;
         }
-        const metres = (0, decode_1.chainDeployedMetres)(chainCount);
+        const lapTenthsInch = lapTenthsBySource.get(chainCount.sourceAddress);
+        let metres;
+        if (lapTenthsInch !== undefined && lapTenthsInch > 0) {
+            // 0x6C1 is a lap count; 0x6C0 says how long one lap is.
+            metres = (0, decode_1.chainDeployedMetresFromLap)(chainCount, lapTenthsInch);
+        }
+        else {
+            if (!missingLapWarned.has(chainCount.sourceAddress)) {
+                missingLapWarned.add(chainCount.sourceAddress);
+                app.debug(`no 0x${decode_1.QUICK_CHAIN_CONFIG_CAN_ID.toString(16)} gypsy lap for ${chainCount.sourceAddress}; falling back to the frame units`);
+            }
+            const totalChainMetres = readFiniteNumber(app.getSelfPath('design.totalAnchorChainLength.value'));
+            const forceUnits = (0, decode_1.resolveChainUnits)(chainCount, chainUnits, totalChainMetres);
+            if (forceUnits === 'Feet' && chainCount.units !== 'Feet') {
+                app.debug(`chain count ${chainCount.chainDeployed} exceeds ${totalChainMetres}m total chain; treating it as feet`);
+            }
+            metres = (0, decode_1.chainDeployedMetres)(chainCount, forceUnits);
+        }
         // Publish first: the reading is ours whatever the anchor alarm does with
         // it, and it should land even if the alarm is absent or unhappy.
-        app.handleMessage(exports.PLUGIN_ID, (0, delta_1.buildRodeLengthDelta)(chainCount));
+        app.handleMessage(exports.PLUGIN_ID, (0, delta_1.buildRodeLengthDelta)(chainCount, undefined, metres));
         if (bridge) {
             // Only read the position when it is about to be used: the alarm keeps
             // the anchor where it was dropped, so ours only matters at the drop.
@@ -120,6 +160,9 @@ function quickChainCounter(app) {
         schema: () => exports.CONFIG_SCHEMA,
         start(config = {}) {
             const canInterface = config.canInterface || exports.DEFAULT_CAN_INTERFACE;
+            chainUnits = config.chainUnits || 'auto';
+            lapTenthsBySource.clear();
+            missingLapWarned.clear();
             try {
                 // Claim the path before the first reading so a steady chain length is
                 // never mistaken for a dead sensor. The chain counter sends nothing
@@ -139,6 +182,7 @@ function quickChainCounter(app) {
                     canInterface,
                     addonDir: config.canboatjsPath || undefined,
                     onFrame: publish,
+                    onConfigFrame: learnChainConfig,
                     onError: (error) => app.error(`error reading ${canInterface}: ${error.message}`),
                     debug: app.debug
                 });

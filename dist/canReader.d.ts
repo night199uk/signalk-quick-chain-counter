@@ -4,6 +4,8 @@ export interface CanFrame {
 }
 /** Only the chain count identifier is of interest; see the file comment. */
 export declare function isChainCountFrame(id: number): boolean;
+/** The configuration frame carries the gypsy-lap length used to scale 0x6C1. */
+export declare function isChainConfigFrame(id: number): boolean;
 /**
  * Candidate `node_modules` directories to search for canboatjs.
  *
@@ -20,6 +22,7 @@ export interface CanReaderOptions {
     /** Explicit @canboat/canboatjs location, if auto-detection is not wanted. */
     addonDir?: string;
     onFrame(frame: CanFrame): void;
+    onConfigFrame?(frame: CanFrame): void;
     onError(error: Error): void;
     debug(...args: unknown[]): void;
 }

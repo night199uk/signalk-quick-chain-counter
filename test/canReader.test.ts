@@ -3,6 +3,7 @@ import * as path from 'path'
 import {
   CanReader,
   candidateLookupPaths,
+  isChainConfigFrame,
   isChainCountFrame
 } from '../src/canReader'
 
@@ -18,6 +19,17 @@ describe('isChainCountFrame', () => {
 
   it('refuses an unrelated identifier', () => {
     expect(isChainCountFrame(0x18eeff01)).to.equal(false)
+  })
+})
+
+describe('isChainConfigFrame', () => {
+  it('accepts the configuration identifier', () => {
+    expect(isChainConfigFrame(0x6c0)).to.equal(true)
+  })
+
+  it('refuses the count and neighbouring identifiers', () => {
+    expect(isChainConfigFrame(0x6c1)).to.equal(false)
+    expect(isChainConfigFrame(0x6c2)).to.equal(false)
   })
 })
 
