@@ -1,6 +1,6 @@
 {
   "name": "signalk-quick-chain-counter",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Reads Quick PCS chain counter frames directly from a SocketCAN interface",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
