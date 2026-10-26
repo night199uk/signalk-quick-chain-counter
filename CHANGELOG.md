@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+- Point the package repository/homepage/bugs metadata at
+  `night199uk/signalk-quick-chain-counter`, so npm trusted-publishing
+  provenance matches the workflow that builds the release.
+
 ## 0.1.2
 
 - Decodes the gypsy lap length from `0x6C0` and multiplies the `0x6C1` lap
