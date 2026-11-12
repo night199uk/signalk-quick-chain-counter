@@ -20,11 +20,32 @@ permissions:
   contents: read
 
 jobs:
-  # Gate the release on the same checks that run for a pull request.
+  # Gate the release on the checks that matter for publishing, on Linux only.
+  # The full multi-platform matrix in ci.yml still runs on every push; a
+  # release should not be blocked by a busy macOS or arm runner.
   ci:
-    uses: SignalK/signalk-server/.github/workflows/plugin-ci.yml@master
-    with:
-      enable-armv7: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+      - name: dist/ must match a fresh build
+        run: |
+          if ! git diff --quiet -- dist; then
+            echo "::error::dist/ is out of date. Run 'npm run build' and commit the result."
+            git --no-pager diff --stat -- dist
+            exit 1
+          fi
+          echo "dist/ matches a fresh build"
 
   publish:
     needs: ci

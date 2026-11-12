@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5
+
+- Run the release gate on Linux only. The full multi-platform matrix still
+  runs on every push, but a busy macOS/arm runner can no longer block an npm
+  publish.
+
 ## 0.1.4
 
 - Publishes the resolved chain length (from the gypsy-lap decode) instead of
