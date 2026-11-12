@@ -125,7 +125,8 @@ export function planAnchorAction(
   state: AnchorAlarmState,
   metres: number,
   position: VesselPosition | undefined,
-  scope: number
+  scope: number,
+  minimumDropMetres: number = 0
 ): { action: AnchorAction; state: AnchorAlarmState } {
   if (!(metres > 0)) {
     return state.deployed
@@ -136,14 +137,17 @@ export function planAnchorAction(
   const radius = Math.round(metres * scope)
 
   if (!state.deployed) {
-    // Cannot drop without knowing where the boat is; stay undeployed and try
-    // again on the next frame rather than inventing a position.
-    return position
-      ? {
-          action: { kind: 'drop', position, radius },
-          state: { deployed: true, radius }
-        }
-      : { action: { kind: 'none' }, state }
+    // Cannot drop without knowing where the boat is, and the position is not
+    // the anchor's until enough chain is out to put the anchor on the bottom.
+    // Keep waiting and try again on the next frame rather than recording a
+    // position while the anchor is still falling or dragging.
+    if (!position || metres < minimumDropMetres) {
+      return { action: { kind: 'none' }, state }
+    }
+    return {
+      action: { kind: 'drop', position, radius },
+      state: { deployed: true, radius }
+    }
   }
 
   if (radius !== state.radius) {
@@ -323,7 +327,8 @@ export class AnchorAlarmBridge {
 
   async update(
     metres: number,
-    position: VesselPosition | undefined
+    position: VesselPosition | undefined,
+    minimumDropMetres: number = 0
   ): Promise<void> {
     if (this.disabled) {
       return
@@ -362,7 +367,8 @@ export class AnchorAlarmBridge {
       this.state,
       metres,
       position,
-      this.scope
+      this.scope,
+      minimumDropMetres
     )
     if (action.kind === 'none') {
       this.state = state

@@ -77,6 +77,9 @@ no network access beyond the package itself.
 | **Drive the anchor alarm** | on | Drop/raise/resize an anchor alarm from the chain counter |
 | **Watch zone radius, as a multiple of the rode** | `1.0` | The alarm radius is the chain length times this |
 | **Chain counter units** | `auto` | Fallback only: force `meters`/`feet` if `0x6C0` is missing |
+| **Wait for the anchor to reach the bottom** | on | Do not set the anchor position until the depth plus bow roller height of chain is out |
+| **No-data alarm timeout** | `30 s` | Alarm if an engine is running and no `0x6C1` frame arrives; `0` disables |
+| **Engine running threshold** | `1 Hz` | `propulsion.*.revolutions` above this counts as running (1 Hz = 60 RPM) |
 | **Anchor alarm plugin id** | `hoekens-anchor-alarm` | Whose `navigation.anchor.position` handler to drive |
 | **canboatjs location** | *(auto)* | Only set this if the automatic lookup fails |
 
@@ -111,6 +114,21 @@ Not every refusal means the anchor is up. Hoeken also refuses a shrink while
 the boat is outside the requested smaller zone, and while there is no GPS fix.
 Those are transient, so the plugin retries them on later readings rather than
 freezing the previous, larger radius.
+
+**The anchor position waits for the anchor to reach the bottom.** The first
+chain readings are the anchor falling, not the anchor set. The plugin does not
+send the drop until the chain out is at least
+`environment.depth.belowSurface + design.bowAnchorRollerHeight`. If the depth is
+unavailable it keeps waiting rather than recording a position while the anchor
+is still moving; the option can be turned off for a boat without a depth
+sounder.
+
+**The CAN bus has a watchdog.** The chain counter is powered from the engines,
+so silence with the engines off is normal. When either engine's
+`propulsion.*.revolutions` is above the threshold and no `0x6C1` frame has
+arrived for the timeout, the plugin raises
+`notifications.signalk-quick-chain-counter.quickCanBus`. It clears when frames
+resume or the engines stop.
 
 **Startup adopts the alarm's state.** On start the plugin reads
 `navigation.anchor.state`, `navigation.anchor.position` and the current circle

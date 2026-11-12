@@ -15,9 +15,10 @@
  * limitations under the License.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RODE_LENGTH_META = void 0;
+exports.RODE_LENGTH_META = exports.CAN_BUS_NOTIFICATION_PATH = void 0;
 exports.quickSource = quickSource;
 exports.buildRodeLengthDelta = buildRodeLengthDelta;
+exports.buildCanBusAlarmDelta = buildCanBusAlarmDelta;
 exports.buildRodeLengthMetaDelta = buildRodeLengthMetaDelta;
 exports.readVesselPosition = readVesselPosition;
 const decode_1 = require("./decode");
@@ -50,7 +51,36 @@ function buildRodeLengthDelta(chainCount, timestamp = new Date().toISOString(), 
                 values: [
                     {
                         path: decode_1.RODE_LENGTH_PATH,
-                        value: (0, decode_1.chainDeployedMetres)(chainCount)
+                        value: metres
+                    }
+                ]
+            }
+        ]
+    };
+}
+/** Notification raised when the chain counter is silent while an engine runs. */
+exports.CAN_BUS_NOTIFICATION_PATH = 'notifications.signalk-quick-chain-counter.quickCanBus';
+/**
+ * Build the notification that says the Quick CAN bus has gone quiet.
+ *
+ * Clearing is a null value, which is how Signal K removes a notification.
+ */
+function buildCanBusAlarmDelta(active, message, timestamp = new Date().toISOString()) {
+    return {
+        updates: [
+            {
+                timestamp,
+                values: [
+                    {
+                        path: exports.CAN_BUS_NOTIFICATION_PATH,
+                        value: active
+                            ? {
+                                state: 'alarm',
+                                method: ['visual', 'sound'],
+                                message: message ??
+                                    'No data from the Quick chain counter while an engine is running'
+                            }
+                            : null
                     }
                 ]
             }

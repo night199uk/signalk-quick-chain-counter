@@ -47,6 +47,7 @@ import {
   RODE_LENGTH_PATH
 } from './decode'
 import {
+  buildCanBusAlarmDelta,
   buildRodeLengthDelta,
   buildRodeLengthMetaDelta,
   readVesselPosition,
@@ -60,6 +61,15 @@ export const DEFAULT_CAN_INTERFACE = 'can0'
 
 /** Watch zone radius as a multiple of the rode out: the swinging room. */
 export const DEFAULT_RADIUS_SCOPE = 1
+
+/** Alarm if no 0x6C1 frame arrives for this long while an engine is running. */
+export const DEFAULT_CAN_TIMEOUT_SECONDS = 30
+
+/** Revolutions (Hz) above which an engine counts as running. */
+export const DEFAULT_ENGINE_REVOLUTIONS_HZ = 1
+
+/** How often the CAN-bus watchdog checks the engine and frame age. */
+const WATCHDOG_INTERVAL_MS = 5000
 
 /** The slice of the server API this plugin uses. */
 export interface PluginApp {
@@ -91,6 +101,9 @@ export interface PluginConfig {
   driveAnchorAlarm?: boolean
   radiusScope?: number
   chainUnits?: ChainUnitOverride
+  requireDepthBeforeDrop?: boolean
+  canTimeoutSeconds?: number
+  engineRevolutionsThreshold?: number
   anchorAlarmSource?: string
 }
 
@@ -135,6 +148,27 @@ export const CONFIG_SCHEMA = {
       description:
         'How the Quick counter reports chain length. Auto trusts the frame and treats a value larger than the total chain as feet; set feet if the counter displays feet but the frame reports metres.'
     },
+    requireDepthBeforeDrop: {
+      type: 'boolean',
+      title: 'Wait for the anchor to reach the bottom',
+      description:
+        'Do not set the anchor position until at least the water depth plus bow roller height of chain is out. Without this the anchor position can be recorded while the anchor is still falling or dragging.',
+      default: true
+    },
+    canTimeoutSeconds: {
+      type: 'number',
+      title: 'No-data alarm timeout (seconds)',
+      description:
+        'Raise an alarm when an engine is running but no Quick chain counter frame has arrived for this long. Set to 0 to disable the watchdog.',
+      default: DEFAULT_CAN_TIMEOUT_SECONDS
+    },
+    engineRevolutionsThreshold: {
+      type: 'number',
+      title: 'Engine running threshold (Hz)',
+      description:
+        'A propulsion.revolutions value above this counts as an engine running. Signal K stores revolutions in Hz; 1 Hz is 60 RPM.',
+      default: DEFAULT_ENGINE_REVOLUTIONS_HZ
+    },
     anchorAlarmSource: {
       type: 'string',
       title: 'Anchor alarm plugin id',
@@ -176,14 +210,121 @@ export function frameToDelta(
   return buildRodeLengthDelta(chainCount, timestamp)
 }
 
+/**
+ * True when any propulsion instance is turning above the threshold.
+ *
+ * Signal K stores `propulsion.<id>.revolutions` in Hz, so the default
+ * threshold of 1 is 60 RPM.
+ */
+export function anyEngineRunning(
+  propulsion: unknown,
+  threshold: number
+): boolean {
+  if (typeof propulsion !== 'object' || propulsion === null) {
+    return false
+  }
+
+  for (const engine of Object.values(propulsion as Record<string, unknown>)) {
+    if (typeof engine !== 'object' || engine === null) {
+      continue
+    }
+    const revolutions = (engine as Record<string, unknown>).revolutions
+    const value =
+      typeof revolutions === 'object' && revolutions !== null
+        ? (revolutions as { value?: unknown }).value
+        : revolutions
+    if (typeof value === 'number' && Number.isFinite(value) && value > threshold) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * True when an engine has been running and no frame has arrived for the
+ * timeout. The clock starts at whichever is later: the last frame or the
+ * moment the engine started, so starting an engine does not alarm on a stale
+ * frame from the previous run.
+ */
+export function canBusDataOverdue(
+  now: number,
+  lastFrameAt: number | undefined,
+  engineRunningSince: number | undefined,
+  timeoutMs: number
+): boolean {
+  if (engineRunningSince === undefined) {
+    return false
+  }
+  const reference = Math.max(lastFrameAt ?? 0, engineRunningSince)
+  return now - reference > timeoutMs
+}
+
 export default function quickChainCounter(
   app: PluginApp
 ): QuickChainCounterPlugin {
   let reader: CanReader | undefined
   let bridge: AnchorAlarmBridge | undefined
   let chainUnits: ChainUnitOverride = 'auto'
+  let requireDepthBeforeDrop = true
+  let missingDepthWarned = false
   const lapTenthsBySource = new Map<number, number>()
   const missingLapWarned = new Set<number>()
+  let watchdog: ReturnType<typeof setInterval> | undefined
+  let lastChainFrameAt: number | undefined
+  let engineRunningSince: number | undefined
+  let canBusAlarm = false
+  let canTimeoutMs = DEFAULT_CAN_TIMEOUT_SECONDS * 1000
+  let engineRevolutionsThreshold = DEFAULT_ENGINE_REVOLUTIONS_HZ
+
+  function setCanBusAlarm(active: boolean, message?: string): void {
+    if (active === canBusAlarm) {
+      return
+    }
+    canBusAlarm = active
+    app.handleMessage(PLUGIN_ID, buildCanBusAlarmDelta(active, message))
+  }
+
+  function checkCanBus(): void {
+    const running = anyEngineRunning(
+      app.getSelfPath('propulsion'),
+      engineRevolutionsThreshold
+    )
+    if (!running) {
+      engineRunningSince = undefined
+      setCanBusAlarm(false)
+      return
+    }
+
+    if (engineRunningSince === undefined) {
+      engineRunningSince = Date.now()
+    }
+
+    if (
+      canBusDataOverdue(
+        Date.now(),
+        lastChainFrameAt,
+        engineRunningSince,
+        canTimeoutMs
+      )
+    ) {
+      setCanBusAlarm(
+        true,
+        `No Quick chain counter data for ${Math.round(canTimeoutMs / 1000)} s while an engine is running`
+      )
+    } else {
+      setCanBusAlarm(false)
+    }
+  }
+
+  function stopWatchdog(): void {
+    if (watchdog) {
+      clearInterval(watchdog)
+      watchdog = undefined
+    }
+    engineRunningSince = undefined
+    lastChainFrameAt = undefined
+    setCanBusAlarm(false)
+  }
 
   function learnChainConfig(frame: CanFrame): void {
     const config = decodeChainConfig(frame.data)
@@ -201,12 +342,37 @@ export default function quickChainCounter(
   }
 
   function publish(frame: CanFrame): void {
+    lastChainFrameAt = Date.now()
     const chainCount = decodeChainCount(frame.data)
     if (chainCount === undefined) {
       app.debug(
         `ignoring unusable 0x${QUICK_CHAIN_COUNT_CAN_ID.toString(16)} frame (${frame.data.length} bytes)`
       )
       return
+    }
+
+    let minimumDropMetres = 0
+    if (requireDepthBeforeDrop) {
+      const depth = readFiniteNumber(
+        app.getSelfPath('environment.depth.belowSurface.value')
+      )
+      const rollerHeight =
+        readFiniteNumber(
+          app.getSelfPath('design.bowAnchorRollerHeight.value')
+        ) ?? 0
+      if (depth !== undefined && depth > 0) {
+        minimumDropMetres = depth + rollerHeight
+      } else {
+        // Without a depth we cannot know when the anchor is on the bottom.
+        // Keep waiting rather than recording a position too early.
+        minimumDropMetres = Infinity
+        if (!missingDepthWarned) {
+          missingDepthWarned = true
+          app.debug(
+            'no environment.depth.belowSurface; not dropping until a depth is available'
+          )
+        }
+      }
     }
 
     const lapTenthsInch = lapTenthsBySource.get(chainCount.sourceAddress)
@@ -250,7 +416,7 @@ export default function quickChainCounter(
       const position = readVesselPosition(
         app.getSelfPath('navigation.position.value')
       )
-      bridge.update(metres, position).catch((error: Error) => {
+      bridge.update(metres, position, minimumDropMetres).catch((error: Error) => {
         app.debug(`anchor alarm update failed: ${error.message}`)
       })
     }
@@ -267,8 +433,15 @@ export default function quickChainCounter(
     start(config: PluginConfig = {}): void {
       const canInterface = config.canInterface || DEFAULT_CAN_INTERFACE
       chainUnits = config.chainUnits || 'auto'
+      requireDepthBeforeDrop = config.requireDepthBeforeDrop !== false
+      canTimeoutMs =
+        (config.canTimeoutSeconds ?? DEFAULT_CAN_TIMEOUT_SECONDS) * 1000
+      engineRevolutionsThreshold =
+        config.engineRevolutionsThreshold ?? DEFAULT_ENGINE_REVOLUTIONS_HZ
+      missingDepthWarned = false
       lapTenthsBySource.clear()
       missingLapWarned.clear()
+      stopWatchdog()
 
       try {
         // Claim the path before the first reading so a steady chain length is
@@ -300,6 +473,11 @@ export default function quickChainCounter(
         })
         reader.start()
 
+        if (canTimeoutMs > 0) {
+          watchdog = setInterval(checkCanBus, WATCHDOG_INTERVAL_MS)
+          watchdog.unref?.()
+        }
+
         bridge =
           config.driveAnchorAlarm === false
             ? undefined
@@ -316,6 +494,7 @@ export default function quickChainCounter(
       } catch (error) {
         reader = undefined
         bridge = undefined
+        stopWatchdog()
         app.setPluginError(
           `Could not read ${canInterface}: ${(error as Error).message}`
         )
@@ -323,6 +502,7 @@ export default function quickChainCounter(
     },
 
     stop(): void {
+      stopWatchdog()
       if (reader) {
         reader.stop()
         reader = undefined

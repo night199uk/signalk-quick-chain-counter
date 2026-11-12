@@ -1,12 +1,23 @@
 import { expect } from 'chai'
 import quickChainCounter, {
+  anyEngineRunning,
+  canBusDataOverdue,
   CONFIG_SCHEMA,
   DEFAULT_CAN_INTERFACE,
+  DEFAULT_CAN_TIMEOUT_SECONDS,
+  DEFAULT_ENGINE_REVOLUTIONS_HZ,
   frameToDelta,
   PLUGIN_ID,
   PluginApp
 } from '../src/plugin'
-import { buildRodeLengthMetaDelta, RODE_LENGTH_META } from '../src/delta'
+import {
+  buildCanBusAlarmDelta,
+  buildRodeLengthDelta,
+  buildRodeLengthMetaDelta,
+  CAN_BUS_NOTIFICATION_PATH,
+  RODE_LENGTH_META
+} from '../src/delta'
+import { decodeChainCount } from '../src/decode'
 
 const CHAIN_COUNT_FRAME = Buffer.from('C1186B0000000200', 'hex')
 
@@ -56,6 +67,24 @@ describe('plugin contract', () => {
       DEFAULT_CAN_INTERFACE
     )
     expect(schema.properties.canInterface.type).to.equal('string')
+  })
+
+  it('waits for depth before setting the anchor by default', () => {
+    const schema = quickChainCounter(fakeApp().app).schema() as typeof CONFIG_SCHEMA
+
+    expect(schema.properties.requireDepthBeforeDrop.default).to.equal(true)
+    expect(schema.properties.requireDepthBeforeDrop.type).to.equal('boolean')
+  })
+
+  it('configures the CAN-bus watchdog', () => {
+    const schema = quickChainCounter(fakeApp().app).schema() as typeof CONFIG_SCHEMA
+
+    expect(schema.properties.canTimeoutSeconds.default).to.equal(
+      DEFAULT_CAN_TIMEOUT_SECONDS
+    )
+    expect(schema.properties.engineRevolutionsThreshold.default).to.equal(
+      DEFAULT_ENGINE_REVOLUTIONS_HZ
+    )
   })
 
   it('offers a chain unit override, defaulting to auto', () => {
@@ -134,6 +163,86 @@ describe('rode length metadata', () => {
     expect(RODE_LENGTH_META.timeout).to.equal(0)
     expect(RODE_LENGTH_META.updateContract).to.equal('event')
     expect(RODE_LENGTH_META.units).to.equal('m')
+  })
+})
+
+describe('anyEngineRunning', () => {
+  it('is false without propulsion data', () => {
+    expect(anyEngineRunning(undefined, 1)).to.equal(false)
+  })
+
+  it('is false when both engines are stopped', () => {
+    expect(
+      anyEngineRunning(
+        {
+          port: { revolutions: { value: 0 } },
+          starboard: { revolutions: { value: 0.2 } }
+        },
+        1
+      )
+    ).to.equal(false)
+  })
+
+  it('is true when either engine is above the threshold', () => {
+    expect(
+      anyEngineRunning(
+        {
+          port: { revolutions: { value: 0 } },
+          starboard: { revolutions: { value: 12 } }
+        },
+        1
+      )
+    ).to.equal(true)
+  })
+
+  it('accepts a bare revolutions number', () => {
+    expect(anyEngineRunning({ port: { revolutions: 12 } }, 1)).to.equal(true)
+  })
+})
+
+describe('canBusDataOverdue', () => {
+  it('does not alarm while engines are off', () => {
+    expect(canBusDataOverdue(100_000, 0, undefined, 30_000)).to.equal(false)
+  })
+
+  it('does not alarm during the first timeout after engine start', () => {
+    expect(canBusDataOverdue(40_000, undefined, 20_000, 30_000)).to.equal(false)
+  })
+
+  it('alarms when the last frame is older than the timeout', () => {
+    expect(canBusDataOverdue(100_000, 60_000, 10_000, 30_000)).to.equal(true)
+  })
+
+  it('gives a fresh engine start a full timeout even with an old frame', () => {
+    expect(canBusDataOverdue(40_000, 1_000, 35_000, 30_000)).to.equal(false)
+    expect(canBusDataOverdue(70_000, 1_000, 35_000, 30_000)).to.equal(true)
+  })
+})
+
+describe('CAN bus notification', () => {
+  it('publishes an alarm and clears it with null', () => {
+    const on = buildCanBusAlarmDelta(
+      true,
+      'no frames',
+      '2026-01-01T00:00:00.000Z'
+    )
+    expect(on.updates[0].values[0].path).to.equal(CAN_BUS_NOTIFICATION_PATH)
+    expect(on.updates[0].values[0].value).to.deep.include({
+      state: 'alarm',
+      message: 'no frames'
+    })
+
+    const off = buildCanBusAlarmDelta(false)
+    expect(off.updates[0].values[0].value).to.equal(null)
+  })
+})
+
+describe('buildRodeLengthDelta', () => {
+  it('publishes the metres it is given', () => {
+    const chainCount = decodeChainCount(CHAIN_COUNT_FRAME)!
+    const delta = buildRodeLengthDelta(chainCount, undefined, 48.87)
+
+    expect(delta.updates[0].values[0].value).to.equal(48.87)
   })
 })
 

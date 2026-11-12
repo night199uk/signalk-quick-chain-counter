@@ -34,7 +34,7 @@ export declare function readAnchorAlarmState(getSelfPath: (path: string) => unkn
  * anchor is down, an operator raising it by hand is left alone until the chain
  * comes all the way in and goes out again.
  */
-export declare function planAnchorAction(state: AnchorAlarmState, metres: number, position: VesselPosition | undefined, scope: number): {
+export declare function planAnchorAction(state: AnchorAlarmState, metres: number, position: VesselPosition | undefined, scope: number, minimumDropMetres?: number): {
     action: AnchorAction;
     state: AnchorAlarmState;
 };
@@ -97,6 +97,6 @@ export declare class AnchorAlarmBridge {
     constructor(app: PutApp, scope: number, source?: string, readInitialState?: InitialStateReader | undefined);
     isDisabled(): boolean;
     private initialize;
-    update(metres: number, position: VesselPosition | undefined): Promise<void>;
+    update(metres: number, position: VesselPosition | undefined, minimumDropMetres?: number): Promise<void>;
     reset(): void;
 }

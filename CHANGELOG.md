@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.4
+
+- Publishes the resolved chain length (from the gypsy-lap decode) instead of
+  recomputing the fallback value inside the delta builder.
+- Waits until the chain out reaches the water depth plus bow-roller height
+  before setting the anchor position, so the recorded position is not taken
+  while the anchor is still falling or dragging.
+- Raises a Signal K alarm when an engine is running and no Quick chain counter
+  frames have arrived for the configured timeout, and clears it when data
+  resumes.
+
 ## 0.1.3
 
 - Point the package repository/homepage/bugs metadata at

@@ -22,9 +22,10 @@ function plan(
   state: AnchorAlarmState,
   metres: number,
   position: VesselPosition | undefined,
-  scope = 1
+  scope = 1,
+  minimumDropMetres = 0
 ) {
-  return planAnchorAction(state, metres, position, scope)
+  return planAnchorAction(state, metres, position, scope, minimumDropMetres)
 }
 
 describe('readAnchorAlarmState', () => {
@@ -88,6 +89,21 @@ describe('planAnchorAction', () => {
 
     expect(action).to.deep.equal({ kind: 'drop', position: HERE, radius: 30 })
     expect(state).to.deep.equal({ deployed: true, radius: 30 })
+  })
+
+  it('waits for enough chain to reach the bottom before dropping', () => {
+    // 16 ft of chain in 40 ft of water is not a deployed anchor.
+    const { action, state } = plan(IDLE, 16 / 3.280839895, HERE, 1, 40 / 3.280839895)
+
+    expect(action).to.deep.equal({ kind: 'none' })
+    expect(state.deployed).to.equal(false)
+  })
+
+  it('drops once the chain is at least as deep as the water', () => {
+    const depth = 40 / 3.280839895
+    const { action } = plan(IDLE, depth, HERE, 1, depth)
+
+    expect(action.kind).to.equal('drop')
   })
 
   it('waits for a position before dropping', () => {
@@ -354,6 +370,19 @@ describe('AnchorAlarmBridge', () => {
       'vessels.self.navigation.anchor.position'
     )
     expect(calls[calls.length - 1].value).to.deep.include({ radius: 20 })
+  })
+
+  it('does not drop before the chain reaches the bottom', async () => {
+    const { app, calls } = fakeApp()
+    const bridge = new AnchorAlarmBridge(app, 1)
+
+    await bridge.update(5, HERE, 20)
+    expect(calls).to.be.empty
+
+    await bridge.update(20, HERE, 20)
+    expect(calls.map((c) => c.path)).to.deep.equal([
+      'vessels.self.navigation.anchor.position'
+    ])
   })
 
   it('adopts an anchor that is already down instead of re-dropping', async () => {

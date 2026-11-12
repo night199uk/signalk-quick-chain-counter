@@ -97,7 +97,44 @@ export function buildRodeLengthDelta(
         values: [
           {
             path: RODE_LENGTH_PATH,
-            value: chainDeployedMetres(chainCount)
+            value: metres
+          }
+        ]
+      }
+    ]
+  }
+}
+
+/** Notification raised when the chain counter is silent while an engine runs. */
+export const CAN_BUS_NOTIFICATION_PATH =
+  'notifications.signalk-quick-chain-counter.quickCanBus'
+
+/**
+ * Build the notification that says the Quick CAN bus has gone quiet.
+ *
+ * Clearing is a null value, which is how Signal K removes a notification.
+ */
+export function buildCanBusAlarmDelta(
+  active: boolean,
+  message?: string,
+  timestamp: string = new Date().toISOString()
+): SignalKDelta {
+  return {
+    updates: [
+      {
+        timestamp,
+        values: [
+          {
+            path: CAN_BUS_NOTIFICATION_PATH,
+            value: active
+              ? {
+                  state: 'alarm',
+                  method: ['visual', 'sound'],
+                  message:
+                    message ??
+                    'No data from the Quick chain counter while an engine is running'
+                }
+              : null
           }
         ]
       }

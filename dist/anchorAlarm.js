@@ -90,7 +90,7 @@ function readAnchorAlarmState(getSelfPath) {
  * anchor is down, an operator raising it by hand is left alone until the chain
  * comes all the way in and goes out again.
  */
-function planAnchorAction(state, metres, position, scope) {
+function planAnchorAction(state, metres, position, scope, minimumDropMetres = 0) {
     if (!(metres > 0)) {
         return state.deployed
             ? { action: { kind: 'raise' }, state: { deployed: false } }
@@ -98,14 +98,17 @@ function planAnchorAction(state, metres, position, scope) {
     }
     const radius = Math.round(metres * scope);
     if (!state.deployed) {
-        // Cannot drop without knowing where the boat is; stay undeployed and try
-        // again on the next frame rather than inventing a position.
-        return position
-            ? {
-                action: { kind: 'drop', position, radius },
-                state: { deployed: true, radius }
-            }
-            : { action: { kind: 'none' }, state };
+        // Cannot drop without knowing where the boat is, and the position is not
+        // the anchor's until enough chain is out to put the anchor on the bottom.
+        // Keep waiting and try again on the next frame rather than recording a
+        // position while the anchor is still falling or dragging.
+        if (!position || metres < minimumDropMetres) {
+            return { action: { kind: 'none' }, state };
+        }
+        return {
+            action: { kind: 'drop', position, radius },
+            state: { deployed: true, radius }
+        };
     }
     if (radius !== state.radius) {
         return {
@@ -210,7 +213,7 @@ class AnchorAlarmBridge {
         }
         return true;
     }
-    async update(metres, position) {
+    async update(metres, position, minimumDropMetres = 0) {
         if (this.disabled) {
             return;
         }
@@ -239,7 +242,7 @@ class AnchorAlarmBridge {
         if (!this.state.deployed && !this.armed) {
             return;
         }
-        const { action, state } = planAnchorAction(this.state, metres, position, this.scope);
+        const { action, state } = planAnchorAction(this.state, metres, position, this.scope, minimumDropMetres);
         if (action.kind === 'none') {
             this.state = state;
             return;

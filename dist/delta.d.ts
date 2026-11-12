@@ -54,6 +54,14 @@ export declare function quickSource(chainCount: ChainCount): SignalKSource;
  * not ours; this is only the reading straight off the bus.
  */
 export declare function buildRodeLengthDelta(chainCount: ChainCount, timestamp?: string, metres?: number): SignalKDelta;
+/** Notification raised when the chain counter is silent while an engine runs. */
+export declare const CAN_BUS_NOTIFICATION_PATH = "notifications.signalk-quick-chain-counter.quickCanBus";
+/**
+ * Build the notification that says the Quick CAN bus has gone quiet.
+ *
+ * Clearing is a null value, which is how Signal K removes a notification.
+ */
+export declare function buildCanBusAlarmDelta(active: boolean, message?: string, timestamp?: string): SignalKDelta;
 /**
  * Metadata for the deployed chain length.
  *
